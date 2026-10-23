@@ -1,0 +1,816 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Web Stress Test</title>
+<style>
+:root{--bg:#0f1115;--panel:#181b22;--panel2:#1f232c;--line:#2a2f3a;--text:#e6e8ee;--dim:#8b93a5;--accent:#4f8cff;--ok:#2ecc71;--warn:#f5b301;--bad:#ff4d4f;--idle:#555c6b}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:14px/1.35 system-ui,"Segoe UI",Roboto,sans-serif;overflow:hidden}
+body{display:flex;flex-direction:column;height:100vh;padding:10px;gap:8px}
+header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+h1{font-size:18px;margin:0;font-weight:650;letter-spacing:.2px}
+.dim{color:var(--dim);font-size:12px}
+.spacer{flex:1}
+.timer{display:flex;flex-direction:column;align-items:flex-end;min-width:130px}
+#elapsed{font:600 22px/1 ui-monospace,Consolas,monospace}
+.bar{width:130px;height:4px;background:var(--line);border-radius:2px;margin-top:4px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .5s}
+select,button,input[type=text]{font:inherit;color:var(--text);background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:7px 10px}
+button{cursor:pointer}
+button:disabled,select:disabled{opacity:.5;cursor:default}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600;min-width:110px}
+button.primary.stop{background:var(--bad);border-color:var(--bad)}
+.hint{font-size:12px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+main{flex:1;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(2,1fr);gap:8px;min-height:0}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px 11px;display:flex;flex-direction:column;gap:5px;min-height:0;min-width:0;overflow:hidden}
+.th{display:flex;align-items:center;gap:8px;font-weight:600}
+.th label{display:flex;align-items:center;gap:6px;cursor:pointer}
+.th .st{margin-left:auto;font-size:12px;font-weight:600;color:var(--dim)}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--idle);flex:none}
+.dot.run{background:var(--accent);animation:pulse 1.2s infinite}
+.dot.ok{background:var(--ok)}.dot.warn{background:var(--warn)}.dot.bad{background:var(--bad)}
+@keyframes pulse{50%{opacity:.35}}
+.big{font:600 26px/1.05 ui-monospace,Consolas,monospace}
+.big small{font:500 12px system-ui,sans-serif;color:var(--dim);margin-left:4px}
+.stats{display:grid;grid-template-columns:auto 1fr auto 1fr;gap:1px 8px;font-size:12px;color:var(--dim)}
+.stats b{color:var(--text);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+canvas.spark{width:100%;flex:1;min-height:28px;display:block}
+#gpuCanvas{width:100%;flex:1;min-height:40px;object-fit:cover;border-radius:6px;background:#000;display:block}
+#t-gpu canvas.spark{flex:none;height:32px}
+.tile.off{opacity:.45}
+dialog{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:16px;max-width:min(1100px,96vw);max-height:94vh;overflow:auto}
+dialog::backdrop{background:rgba(0,0,0,.65)}
+dialog h2{margin:0 0 10px;font-size:18px}
+.form{display:grid;grid-template-columns:auto 1fr;gap:10px 14px;align-items:center;min-width:min(460px,86vw)}
+.form .note{grid-column:1/-1;font-size:12px;color:var(--dim)}
+.btns{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
+.verdict{display:flex;align-items:center;gap:14px;padding:10px 14px;border-radius:10px;background:var(--panel2);margin-bottom:10px}
+.verdict .score{font:700 30px/1 ui-monospace,Consolas,monospace}
+.badge{font-size:11px;font-weight:700;padding:2px 7px;border-radius:5px;color:#111}
+.badge.ok{background:var(--ok)}.badge.warn{background:var(--warn)}.badge.bad{background:var(--bad);color:#fff}
+.rgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.rc{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:9px 11px;font-size:12px}
+.rc h3{margin:0 0 6px;font-size:14px;display:flex;align-items:center;gap:8px}
+.rc h3 .sc{margin-left:auto;color:var(--dim);font-weight:500}
+.rc table{width:100%;border-collapse:collapse;margin-bottom:6px}
+.rc td{padding:1px 0;color:var(--dim)}.rc td+td{color:var(--text);text-align:right}
+.rc ul{margin:0;padding-left:16px}
+.rc li{margin:2px 0}
+.rc li.ok::marker{color:var(--ok)}.rc li.warn::marker{color:var(--warn)}.rc li.bad::marker{color:var(--bad)}.rc li.info::marker{color:var(--dim)}
+.notes{font-size:12px;color:var(--dim);margin-top:8px}
+#perDlg{width:97vw;height:95vh;max-width:none;max-height:none;padding:12px;overflow:hidden}
+#perDlg[open]{display:flex;flex-direction:column;gap:8px}
+.pgrid{flex:1;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:minmax(0,1fr) minmax(0,1.15fr);gap:8px;min-height:0}
+.pp{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:8px 10px;display:flex;flex-direction:column;gap:6px;min-height:0;min-width:0;overflow:hidden}
+.pf{margin-left:auto;display:flex;gap:4px;font-weight:400}
+.pf button{padding:3px 9px;font-size:12px}
+.pf button.on.pass{background:var(--ok);color:#111;border-color:var(--ok)}
+.pf button.on.fail{background:var(--bad);color:#fff;border-color:var(--bad)}
+.pp video{flex:1;min-height:0;width:100%;object-fit:contain;background:#000;border-radius:6px}
+.prow{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.prow select{flex:1;min-width:0}
+.pp .dim{font-size:12px}
+.meter{height:14px;background:var(--line);border-radius:7px;overflow:hidden;flex:none}
+.meter i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--ok),var(--warn) 75%,var(--bad))}
+#pp-keys{grid-column:span 2}
+.kb{flex:1;display:flex;flex-direction:column;gap:3px;min-height:0;justify-content:center}
+.kr{display:flex;gap:3px}
+.k{flex:1 1 0;min-width:0;height:min(5.4vh,36px);border:1px solid var(--line);border-radius:5px;font-size:11px;display:flex;align-items:center;justify-content:center;color:var(--dim);background:var(--panel);white-space:nowrap;overflow:hidden;user-select:none}
+.k.hit{background:#1e5a38;color:#fff;border-color:var(--ok)}
+.k.down{background:var(--accent);color:#fff;border-color:var(--accent)}
+#touchCv{flex:1;min-height:0;width:100%;touch-action:none;background:var(--panel);border-radius:6px;cursor:crosshair;display:block}
+@media (max-width:900px){.pgrid{grid-template-columns:1fr 1fr;grid-template-rows:repeat(3,minmax(0,1fr))}}
+@media (max-width:900px){main{grid-template-columns:repeat(2,1fr);grid-template-rows:repeat(3,1fr)}.rgrid{grid-template-columns:repeat(2,1fr)}}
+@media (max-height:620px){.big{font-size:20px}h1{font-size:16px}#elapsed{font-size:18px}}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>Web Stress Test</h1><div id="devinfo" class="dim">Detecting hardware…</div></div>
+  <div class="spacer"></div>
+  <div class="timer"><span id="elapsed">0:00</span><div class="bar"><i id="prog"></i></div></div>
+  <select id="dur" title="Test length">
+    <option value="0" selected>Run until stopped</option>
+    <option value="60">1 minute</option><option value="300">5 minutes</option>
+    <option value="600">10 minutes</option><option value="900">15 minutes</option>
+    <option value="1800">30 minutes</option><option value="3600">60 minutes</option>
+  </select>
+  <button id="startBtn" class="primary">Start test</button>
+  <button id="setBtn" title="Settings">⚙ Settings</button>
+  <button id="perBtn" title="Test webcam, microphone, speakers, keyboard and touch">Peripherals</button>
+  <button id="repBtn" disabled>Last report</button>
+</header>
+<div id="hint" class="hint">Tips: close other tabs, keep this tab in front, and test for 10+ minutes so heat builds up. Unplug to measure battery drain; plug in to check the charger.</div>
+
+<main>
+  <section class="tile" id="t-cpu">
+    <div class="th"><label><input type="checkbox" id="en-cpu" checked>CPU</label><span class="dot" id="d-cpu"></span><span class="st" id="s-cpu">Idle</span></div>
+    <div class="big"><span id="cpu-big">–</span><small>Mops/s</small></div>
+    <div class="stats"><span>Threads</span><b id="cpu-thr">–</b><span>Initial</span><b id="cpu-base">–</b><span>vs initial</span><b id="cpu-pct">–</b><span>Errors</span><b id="cpu-err">0</b></div>
+    <canvas class="spark" id="cpu-spark"></canvas>
+  </section>
+
+  <section class="tile" id="t-gpu">
+    <div class="th"><label><input type="checkbox" id="en-gpu" checked>GPU</label><span class="dot" id="d-gpu"></span><span class="st" id="s-gpu">Idle</span></div>
+    <div class="big"><span id="gpu-big">–</span><small>FPS</small></div>
+    <div class="stats"><span>vs initial</span><b id="gpu-pct">–</b><span>Checks</span><b id="gpu-chk">–</b><span>Load</span><b id="gpu-load">–</b><span>Resets</span><b id="gpu-lost">0</b></div>
+    <canvas id="gpuCanvas" width="1280" height="720"></canvas>
+    <canvas class="spark" id="gpu-spark"></canvas>
+  </section>
+
+  <section class="tile" id="t-ram">
+    <div class="th"><label><input type="checkbox" id="en-ram" checked>RAM</label><span class="dot" id="d-ram"></span><span class="st" id="s-ram">Idle</span></div>
+    <div class="big"><span id="ram-big">–</span><small>MB under test</small></div>
+    <div class="stats"><span>Target</span><b id="ram-tgt">–</b><span>Bandwidth</span><b id="ram-bw">–</b><span>Passes</span><b id="ram-pass">0</b><span>Errors</span><b id="ram-err">0</b></div>
+    <canvas class="spark" id="ram-spark"></canvas>
+  </section>
+
+  <section class="tile" id="t-disk">
+    <div class="th"><label><input type="checkbox" id="en-disk" checked>Storage</label><span class="dot" id="d-disk"></span><span class="st" id="s-disk">Idle</span></div>
+    <div class="big"><span id="disk-big">–</span><small>MB/s write</small></div>
+    <div class="stats"><span>Read</span><b id="disk-read">–</b><span>Phase</span><b id="disk-phase">–</b><span>Passes</span><b id="disk-pass">0</b><span>Errors</span><b id="disk-err">0</b><span>API</span><b id="disk-mode">–</b><span>File</span><b id="disk-size">–</b></div>
+    <canvas class="spark" id="disk-spark"></canvas>
+  </section>
+
+  <section class="tile" id="t-net">
+    <div class="th"><label><input type="checkbox" id="en-net" checked>Network</label><span class="dot" id="d-net"></span><span class="st" id="s-net">Idle</span></div>
+    <div class="big"><span id="net-big">–</span><small>ms latency</small></div>
+    <div class="stats"><span>Down</span><b id="net-dl">–</b><span>Up</span><b id="net-ul">–</b><span>Jitter</span><b id="net-jit">–</b><span>Failed</span><b id="net-loss">–</b><span>Server</span><b id="net-srv">–</b><span>Drops</span><b id="net-off">0</b></div>
+    <canvas class="spark" id="net-spark"></canvas>
+  </section>
+
+  <section class="tile" id="t-sys">
+    <div class="th"><span>System</span><span class="dot" id="d-sys"></span><span class="st" id="s-sys">Idle</span></div>
+    <div class="big"><span id="sys-big">–</span><small>battery</small></div>
+    <div class="stats"><span>Power</span><b id="sys-chg">–</b><span>Drain</span><b id="sys-drain">–</b><span>Thermal</span><b id="sys-pres">–</b><span>UI freeze</span><b id="sys-lag">–</b><span>Screen lock</span><b id="sys-wake">–</b><span>Background</span><b id="sys-hid">–</b></div>
+    <canvas class="spark" id="sys-spark"></canvas>
+  </section>
+</main>
+
+<dialog id="setDlg">
+  <h2>Settings</h2>
+  <div class="form">
+    <label for="cfg-gpu">GPU load</label>
+    <select id="cfg-gpu"><option value="medium">Medium</option><option value="high">High</option><option value="extreme">Extreme</option></select>
+    <label for="cfg-ram">RAM to test</label>
+    <select id="cfg-ram"><option value="10">10% of RAM</option><option value="25">25% of RAM</option><option value="40">40% of RAM</option><option value="60">60% of RAM</option></select>
+    <label for="cfg-disk">Storage test file</label>
+    <select id="cfg-disk"><option value="64">64 MB</option><option value="128">128 MB</option><option value="256">256 MB</option><option value="512">512 MB</option></select>
+    <label for="cfg-net">Network server</label>
+    <select id="cfg-net"><option value="auto">Auto (Cloudflare, then jsDelivr)</option><option value="cloudflare">Cloudflare speed test</option><option value="jsdelivr">jsDelivr CDN</option><option value="custom">Custom URL</option></select>
+    <label for="cfg-url">Custom URL</label>
+    <input type="text" id="cfg-url" placeholder="https://your-server/testfile.bin (must allow CORS)">
+    <div class="note">If the tab crashes during the RAM test, choose a lower RAM percentage. Each computer downloads about 5 MB every few seconds during the network test, so in a full lab you may want to turn Network off or use a local server.</div>
+  </div>
+  <div class="btns"><button id="setCancel">Cancel</button><button id="setSave" class="primary">Save</button></div>
+</dialog>
+
+<dialog id="perDlg">
+  <div class="th"><h2 style="margin:0">Peripherals</h2><span class="dim" style="font-weight:400">Check each item, then mark it Pass or Fail. Results are added to the report.</span><span class="spacer"></span><button id="perCopy">Copy results</button><button id="perClose" class="primary">Done</button></div>
+  <div class="pgrid">
+    <section class="pp"><div class="th">Webcam<span class="pf" data-k="cam"></span></div>
+      <div class="prow"><select id="camSel"><option value="">Default camera</option></select><button id="camBtn">Start</button></div>
+      <video id="camVid" muted playsinline></video>
+      <div class="dim" id="camInfo">Not started.</div></section>
+    <section class="pp"><div class="th">Microphone<span class="pf" data-k="mic"></span></div>
+      <div class="prow"><select id="micSel"><option value="">Default microphone</option></select><button id="micBtn">Start</button></div>
+      <div class="meter"><i id="micLvl"></i></div>
+      <canvas id="micCv" class="spark"></canvas>
+      <div class="prow"><button id="recBtn" disabled>Record 3 s</button><audio id="recAud" controls style="flex:1;height:32px;min-width:0"></audio></div>
+      <div class="dim" id="micInfo">Not started.</div></section>
+    <section class="pp"><div class="th">Speakers<span class="pf" data-k="spk"></span></div>
+      <div class="prow"><button data-tone="-1">◀ Left</button><button data-tone="0">Both</button><button data-tone="1">Right ▶</button></div>
+      <div class="prow"><button id="sweepBtn">Frequency sweep</button><button id="spkStopBtn">Stop</button></div>
+      <label class="prow dim">Volume <input type="range" id="spkVol" min="0" max="1" step="0.05" value="0.3" style="flex:1"></label>
+      <div class="dim" id="spkInfo">Left and Right should come only from that side. During the sweep (100 Hz → 10 kHz) listen for rattling, buzzing or dropouts. Check the system volume first.</div></section>
+    <section class="pp" id="pp-keys"><div class="th">Keyboard <span class="dim" id="keyInfo" style="font-weight:400">Press every key</span><span class="pf" data-k="keys"></span></div>
+      <div class="kb" id="kb"></div>
+      <div class="dim" id="keyExtra">Other keys detected: none</div></section>
+    <section class="pp"><div class="th">Trackpad / touch<span class="pf" data-k="touch"></span></div>
+      <canvas id="touchCv"></canvas>
+      <div class="prow"><span class="dim" id="touchInfo" style="flex:1">Move or drag across every square. Try left, right and middle clicks, scrolling, and multi-finger touch.</span><button id="touchReset">Reset</button></div></section>
+  </div>
+</dialog>
+
+<dialog id="repDlg">
+  <div id="repBody"></div>
+  <div class="btns"><button id="repCopy">Copy report</button><button id="repSave">Save .txt</button><button id="repClose" class="primary">Close</button></div>
+</dialog>
+
+<script>
+'use strict';
+/* ---------- helpers ---------- */
+const $=id=>document.getElementById(id);
+const txt=(id,v)=>{const e=$(id);if(e)e.textContent=v;};
+const avg=a=>a.length?a.reduce((s,x)=>s+x,0)/a.length:0;
+const sd=a=>{if(a.length<2)return 0;const m=avg(a);return Math.sqrt(avg(a.map(x=>(x-m)**2)));};
+const median=a=>{if(!a.length)return 0;const s=[...a].sort((x,y)=>x-y),m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2;};
+const valid=a=>a.filter(v=>v!=null&&isFinite(v));
+const last=a=>{for(let i=a.length-1;i>=0;i--)if(a[i]!=null&&isFinite(a[i]))return a[i];return null;};
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const fmt=(n,d=0)=>n==null||!isFinite(n)?'–':Number(n).toLocaleString(undefined,{maximumFractionDigits:d,minimumFractionDigits:d});
+const fmtTime=s=>{s=Math.max(0,Math.floor(s));const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;return(h?h+':'+String(m).padStart(2,'0'):m)+':'+String(x).padStart(2,'0');};
+const rnd=()=>Math.random().toString(36).slice(2);
+function mkWorker(fn){const url=URL.createObjectURL(new Blob(['('+fn.toString()+')()'],{type:'text/javascript'}));const w=new Worker(url);setTimeout(()=>URL.revokeObjectURL(url),10000);return w;}
+
+/* ---------- settings ---------- */
+const CFG={gpu:'high',ramPct:25,diskMB:256,net:'auto',netUrl:''};
+try{Object.assign(CFG,JSON.parse(localStorage.getItem('cbstress-cfg')||'{}'));}catch(e){}
+const LOADS={medium:{iter:160,passes:2},high:{iter:320,passes:4},extreme:{iter:640,passes:8}};
+
+/* ---------- device info ---------- */
+const DEV={os:(navigator.userAgentData&&navigator.userAgentData.platform)||navigator.platform||'unknown OS',threads:navigator.hardwareConcurrency||0,mem:navigator.deviceMemory||0,gpu:'unknown',ua:navigator.userAgent};
+function gpuName(){try{const g=document.createElement('canvas').getContext('webgl');if(!g)return'WebGL unavailable';const e=g.getExtension('WEBGL_debug_renderer_info');const r=e?g.getParameter(e.UNMASKED_RENDERER_WEBGL):g.getParameter(g.RENDERER);const l=g.getExtension('WEBGL_lose_context');if(l)l.loseContext();return String(r);}catch(e){return'unknown';}}
+async function devInfo(){
+  DEV.gpu=gpuName();
+  let q='';
+  try{const est=await navigator.storage.estimate();DEV.freeMB=(est.quota-est.usage)/1048576;q=' · '+fmt(DEV.freeMB/1024,1)+' GB storage available to browser';}catch(e){}
+  const mem=DEV.mem?(DEV.mem>=8?'8+ GB':DEV.mem+' GB')+' RAM':'RAM size hidden by browser (assuming 4 GB)';
+  const miss=[];if(!navigator.getBattery)miss.push('battery');if(!('PressureObserver' in window))miss.push('thermal');if(!navigator.deviceMemory)miss.push('RAM size');
+  if(miss.length)txt('hint','Note: this browser doesn\u2019t expose '+miss.join(', ')+' info. Chrome or Edge gives the most complete results.');
+  txt('devinfo',`${DEV.os} · ${DEV.threads||'?'} CPU threads · ${mem} · ${DEV.gpu.replace(/^ANGLE \(|\)$/g,'')}${q}`);
+}
+
+/* ---------- sparkline ---------- */
+function spark(id,data,color,ref){
+  const c=$(id);if(!c)return;const dpr=window.devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;if(!w||!h)return;
+  const W=Math.round(w*dpr),H=Math.round(h*dpr);if(c.width!==W||c.height!==H){c.width=W;c.height=H;}
+  const x=c.getContext('2d');x.setTransform(dpr,0,0,dpr,0,0);x.clearRect(0,0,w,h);
+  const n=Math.max(60,Math.floor(w/2)),d=data.slice(-n),v=valid(d);if(v.length<2)return;
+  const max=Math.max(...v,ref||0)*1.12||1,step=w/(n-1),off=n-d.length;
+  const Y=val=>h-2-(val/max)*(h-6);
+  if(ref){x.strokeStyle='rgba(139,147,165,.5)';x.setLineDash([4,4]);x.beginPath();x.moveTo(0,Y(ref));x.lineTo(w,Y(ref));x.stroke();x.setLineDash([]);}
+  x.strokeStyle=color;x.lineWidth=1.6;x.beginPath();let on=false;
+  d.forEach((val,i)=>{if(val==null||!isFinite(val)){on=false;return;}const px=(i+off)*step,py=Y(val);if(on)x.lineTo(px,py);else{x.moveTo(px,py);on=true;}});
+  x.stroke();x.fillStyle='rgba(139,147,165,.9)';x.font='10px system-ui';x.fillText('max '+fmt(max/1.12,0),3,10);
+}
+
+/* ---------- workers (self-contained; serialized to Blob URLs) ---------- */
+function cpuWorker(){
+  const N=50000;
+  function work(seed){let h=seed|0,f=seed*1e-3;for(let i=0;i<N;i++){h=Math.imul(h^(h>>>15),0x2c1b3c6d);h=Math.imul(h^(h>>>12),0x297a2d39);h^=h>>>15;f=f*0.999+Math.sqrt((h&1023)+1.0)*0.001;}return((h>>>0)^Math.floor(f*1e9))>>>0;}
+  const seeds=[11,23,37,41,53,67,79,97],ref=seeds.map(work);
+  onmessage=()=>{let k=0,ops=0,errs=0,t=performance.now();for(;;){const j=k++&7;if(work(seeds[j])!==ref[j])errs++;ops+=N;const n=performance.now();if(n-t>=250){postMessage({ops,errs});ops=0;errs=0;t=n;}}};
+}
+
+function ramWorker(){
+  onmessage=e=>{
+    const target=e.data.mb,CH=16,W=CH*262144,bufs=[];let err=null;
+    while(bufs.length*CH<target){try{const b=new Uint32Array(W);for(let i=0;i<W;i+=1024)b[i]=1;bufs.push(b);}catch(x){err=String(x&&x.message||x);break;}if(bufs.length%4===0)postMessage({type:'alloc',mb:bufs.length*CH});}
+    postMessage({type:'alloc',mb:bufs.length*CH,done:true,err});
+    let pass=0,bytes=0,errs=0,t=performance.now();
+    const flush=()=>{const n=performance.now();if(n-t>=250){postMessage({type:'tick',bytes,errs,pass});bytes=0;errs=0;t=n;}};
+    for(;;){
+      const s0=Math.imul(pass+1,0x9E3779B1);
+      for(let k=0;k<bufs.length;k++){const b=bufs[k],s=s0^Math.imul(k+1,0x7FEB352D);for(let i=0;i<W;i++)b[i]=s^Math.imul(i,0x85EBCA6B);bytes+=W*4;flush();}
+      for(let k=0;k<bufs.length;k++){const b=bufs[k],s=s0^Math.imul(k+1,0x7FEB352D);for(let i=0;i<W;i++)if(b[i]!==((s^Math.imul(i,0x85EBCA6B))>>>0))errs++;bytes+=W*4;flush();}
+      pass++;
+    }
+  };
+}
+
+function diskWorker(){
+  let stop=false,io=null;
+  const BLK=1<<20,W=BLK>>2,wb=new Uint32Array(W),rb=new Uint32Array(W);
+  const seed=(b,p)=>Math.imul(b+1,0x9E3779B1)^Math.imul(p+1,0x85EBCA6B);
+  const fill=(b,p)=>{const s=seed(b,p);for(let i=0;i<W;i++)wb[i]=s^Math.imul(i,0xC2B2AE35);};
+  const bad=(a,b,p)=>{if(!a||a.length!==W)return 1;const s=seed(b,p);for(let i=0;i<W;i++)if(a[i]!==((s^Math.imul(i,0xC2B2AE35))>>>0))return 1;return 0;};
+  const yieldNow=()=>new Promise(r=>setTimeout(r,0));
+  async function opfs(){
+    const root=await navigator.storage.getDirectory();
+    for await(const name of root.keys())if(name.startsWith('cb-stress'))try{await root.removeEntry(name);}catch(e){}
+    const fname='cb-stress-'+Date.now()+'.bin',fh=await root.getFileHandle(fname,{create:true}),h=await fh.createSyncAccessHandle();
+    return{name:'OPFS',write:b=>{h.write(wb,{at:b*BLK});},flush:()=>h.flush(),read:b=>{h.read(rb,{at:b*BLK});return rb;},
+      close:async()=>{try{h.close();}catch(e){}try{await root.removeEntry(fname);}catch(e){}}};
+  }
+  async function idb(){
+    const name='cb-stress';
+    const db=await new Promise((res,rej)=>{const r=indexedDB.open(name,1);r.onupgradeneeded=()=>r.result.createObjectStore('b');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});
+    const tx=(mode,fn)=>new Promise((res,rej)=>{const t=db.transaction('b',mode,{durability:'strict'});const q=fn(t.objectStore('b'));t.oncomplete=()=>res(q&&q.result);t.onerror=t.onabort=()=>rej(t.error);});
+    return{name:'IndexedDB',write:b=>tx('readwrite',s=>s.put(wb.slice().buffer,b)),flush:()=>{},
+      read:async b=>{const r=await tx('readonly',s=>s.get(b));return r?new Uint32Array(r):null;},
+      close:async()=>{db.close();await new Promise(r=>{const d=indexedDB.deleteDatabase(name);d.onsuccess=d.onerror=d.onblocked=()=>r();});}};
+  }
+  onmessage=async e=>{
+    if(e.data.cmd==='stop'){stop=true;if(!io)postMessage({type:'stopped'});return;}
+    const MB=e.data.mb;
+    try{io=await opfs();}catch(x){try{io=await idb();}catch(y){postMessage({type:'error',msg:'No usable storage API ('+(y&&y.message||y)+')'});return;}}
+    postMessage({type:'mode',mode:io.name});
+    let p=0;
+    while(!stop){
+      let wt=0,rt=0,errs=0,maxW=0,seg=0,segT=0;
+      for(let b=0;b<MB&&!stop;b++){fill(b,p);const t=performance.now();await io.write(b);const d=performance.now()-t;wt+=d;segT+=d;seg++;if(d>maxW)maxW=d;
+        if(seg===16){postMessage({type:'prog',phase:'write',mbps:seg/(Math.max(segT,0.05)/1000)});seg=0;segT=0;await yieldNow();}}
+      if(stop)break;
+      {const t=performance.now();await io.flush();wt+=performance.now()-t;}
+      seg=0;segT=0;
+      for(let b=0;b<MB&&!stop;b++){const t=performance.now();const a=await io.read(b);const d=performance.now()-t;rt+=d;segT+=d;seg++;errs+=bad(a,b,p);
+        if(seg===16){postMessage({type:'prog',phase:'read',mbps:seg/(Math.max(segT,0.05)/1000)});seg=0;segT=0;await yieldNow();}}
+      if(stop)break;
+      postMessage({type:'pass',p,w:MB/(Math.max(wt,1)/1000),r:MB/(Math.max(rt,1)/1000),errs,maxW});
+      p++;
+    }
+    try{await io.close();}catch(e){}
+    postMessage({type:'stopped'});
+  };
+}
+
+/* ---------- GPU ---------- */
+const GPU={gl:null,ok:false,u:{},fbo:null,api:''};
+const VS='attribute vec2 p;void main(){gl_Position=vec4(p,0.0,1.0);}';
+const FS=`precision highp float;uniform vec2 uRes;uniform float uT;uniform int uIter;uniform float uScale;
+void main(){vec2 uv=(gl_FragCoord.xy*2.0-uRes)/min(uRes.x,uRes.y);
+vec2 c=vec2(-0.745+0.02*sin(uT*0.31),0.186+0.02*cos(uT*0.27));vec2 z=uv*1.3;float acc=0.0;
+for(int i=0;i<2048;i++){if(i>=uIter)break;z=vec2(z.x*z.x-z.y*z.y,2.0*z.x*z.y)+c;float d=dot(z,z);if(d>16.0)z=z*0.25+uv*0.05;acc+=exp(-d*0.5);}
+vec3 col=0.5+0.5*cos(6.2831*(vec3(0.0,0.33,0.67)+acc*0.02+uT*0.05));gl_FragColor=vec4(col*uScale,uScale);}`;
+function initGL(){
+  const c=$('gpuCanvas'),o={antialias:false,depth:false,stencil:false,powerPreference:'high-performance'};
+  let gl=c.getContext('webgl2',o);GPU.api=gl?'WebGL 2':'WebGL 1';if(!gl)gl=c.getContext('webgl',o);
+  if(!gl)throw new Error('WebGL not available');GPU.gl=gl;
+  const sh=(t,s)=>{const x=gl.createShader(t);gl.shaderSource(x,s);gl.compileShader(x);if(!gl.getShaderParameter(x,gl.COMPILE_STATUS)&&!gl.isContextLost())throw new Error(gl.getShaderInfoLog(x));return x;};
+  const p=gl.createProgram();gl.attachShader(p,sh(gl.VERTEX_SHADER,VS));gl.attachShader(p,sh(gl.FRAGMENT_SHADER,FS));gl.bindAttribLocation(p,0,'p');gl.linkProgram(p);
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS)&&!gl.isContextLost())throw new Error(gl.getProgramInfoLog(p));
+  gl.useProgram(p);for(const n of['uRes','uT','uIter','uScale'])GPU.u[n]=gl.getUniformLocation(p,n);
+  gl.bindBuffer(gl.ARRAY_BUFFER,gl.createBuffer());gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+  const tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tex);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,64,64,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+  GPU.fbo=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,GPU.fbo);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,tex,0);gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  GPU.ok=true;
+}
+function gpuFrame(st){
+  if(!st.running)return;st.gpu.raf=requestAnimationFrame(()=>gpuFrame(st));
+  const gl=GPU.gl;if(!GPU.ok||gl.isContextLost())return;const L=LOADS[CFG.gpu]||LOADS.high;
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,gl.drawingBufferWidth,gl.drawingBufferHeight);
+  gl.clearColor(0,0,0,1);gl.clear(gl.COLOR_BUFFER_BIT);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE); // additive blend defeats hidden-surface removal on tile GPUs
+  gl.uniform2f(GPU.u.uRes,gl.drawingBufferWidth,gl.drawingBufferHeight);gl.uniform1i(GPU.u.uIter,L.iter);gl.uniform1f(GPU.u.uScale,1/L.passes);
+  const t=(performance.now()-st.t0)/1000;for(let i=0;i<L.passes;i++){gl.uniform1f(GPU.u.uT,t+i*0.05);gl.drawArrays(gl.TRIANGLES,0,3);}
+  st.gpu.frames++;
+}
+function gpuCheck(st){ // render a fixed frame and compare its pixel hash to the first one
+  const gl=GPU.gl;if(!GPU.ok||gl.isContextLost())return;const L=LOADS[CFG.gpu]||LOADS.high;
+  gl.bindFramebuffer(gl.FRAMEBUFFER,GPU.fbo);gl.viewport(0,0,64,64);gl.disable(gl.BLEND);
+  gl.uniform2f(GPU.u.uRes,64,64);gl.uniform1f(GPU.u.uT,1.2345);gl.uniform1i(GPU.u.uIter,L.iter);gl.uniform1f(GPU.u.uScale,1);
+  gl.drawArrays(gl.TRIANGLES,0,3);const px=new Uint8Array(64*64*4);gl.readPixels(0,0,64,64,gl.RGBA,gl.UNSIGNED_BYTE,px);gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  let h=2166136261;for(let i=0;i<px.length;i++){h^=px[i];h=Math.imul(h,16777619);}h>>>=0;
+  st.gpu.checks++;if(st.gpu.ref===null)st.gpu.ref=h;else if(h!==st.gpu.ref)st.gpu.mism++;
+}
+$('gpuCanvas').addEventListener('webglcontextlost',e=>{e.preventDefault();GPU.ok=false;if(S&&S.running)S.gpu.ctxLost++;});
+$('gpuCanvas').addEventListener('webglcontextrestored',()=>{try{initGL();}catch(e){}});
+
+/* ---------- network ---------- */
+const NETP={
+  cloudflare:{name:'Cloudflare',ping:()=>'https://speed.cloudflare.com/__down?bytes=0&r='+rnd(),dl:()=>'https://speed.cloudflare.com/__down?bytes=5000000&r='+rnd(),ul:'https://speed.cloudflare.com/__up'},
+  jsdelivr:{name:'jsDelivr',ping:()=>'https://cdn.jsdelivr.net/npm/jquery@3.7.1/package.json?r='+rnd(),dl:()=>'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js?r='+rnd()}
+};
+const customProv=u=>{const j=u.includes('?')?'&':'?';return{name:'Custom',ping:()=>u+j+'r='+rnd(),dl:()=>u+j+'r='+rnd()};};
+let UPBUF=null;function upBuf(){if(!UPBUF){UPBUF=new Uint8Array(2*1048576);for(let i=0;i<UPBUF.length;i+=65536)crypto.getRandomValues(UPBUF.subarray(i,i+65536));}return UPBUF;}
+async function timedGet(url,timeout,st){
+  const ac=new AbortController(),to=setTimeout(()=>ac.abort(),timeout);
+  try{
+    const t=performance.now(),r=await fetch(url,{cache:'no-store',signal:ac.signal});if(!r.ok)throw new Error('HTTP '+r.status);
+    let bytes=0;const rd=r.body.getReader();
+    for(;;){const{done,value}=await rd.read();if(done)break;bytes+=value.byteLength;if(st&&!st.running){ac.abort();break;}}
+    const ms=performance.now()-t,ent=performance.getEntriesByName(url).pop();performance.clearResourceTimings();
+    return{ms,bytes:ent&&ent.encodedBodySize>0?ent.encodedBodySize:bytes};
+  }finally{clearTimeout(to);}
+}
+async function findProvider(st){
+  if(CFG.net==='custom'&&CFG.netUrl)return customProv(CFG.netUrl);
+  const keys=CFG.net==='auto'?['cloudflare','jsdelivr']:[CFG.net];
+  for(const k of keys){if(!st.running)return null;try{await timedGet(NETP[k].ping(),5000,st);return NETP[k];}catch(e){}}
+  return null;
+}
+async function netLoop(st){
+  const N=st.net;let p=null;
+  while(st.running){
+    if(!p){p=await findProvider(st);if(!st.running)break;if(!p){N.fail++;N.provider='unreachable';await sleep(3000);continue;}N.provider=p.name;}
+    for(let i=0;i<4&&st.running;i++){try{const r=await timedGet(p.ping(),5000,st);if(!st.running)break;N.lat.push(r.ms);N.ok++;}catch(e){if(st.running)N.fail++;}await sleep(400);}
+    if(!st.running)break;
+    try{const r=await timedGet(p.dl(),30000,st);if(st.running){if(r.bytes>100000)N.dl.push(r.bytes*8/(r.ms/1000)/1e6);N.ok++;}}catch(e){if(st.running)N.fail++;}
+    if(p.ul&&st.running){const ac=new AbortController(),to=setTimeout(()=>ac.abort(),30000);
+      try{const t=performance.now();await fetch(p.ul,{method:'POST',mode:'no-cors',body:upBuf(),cache:'no-store',signal:ac.signal});if(st.running){N.ul.push(upBuf().length*8/((performance.now()-t)/1000)/1e6);N.ok++;}}catch(e){if(st.running)N.fail++;}finally{clearTimeout(to);}}
+    await sleep(1000);
+  }
+}
+window.addEventListener('offline',()=>{if(S&&S.running)S.net.offline++;});
+
+/* ---------- run state ---------- */
+let S=null,LAST=null,wakeLock=null;
+const KEYS=['cpu','gpu','ram','disk','net'];
+function newState(en){const now=performance.now();return{en,running:true,t0:now,last:now,sec:0,hiddenSec:0,dur:0,
+  cpu:{workers:[],acc:[],errs:0,crashed:0,hist:[],n:0},
+  gpu:{frames:0,hist:[],ctxLost:0,checks:0,mism:0,ref:null,raf:0,err:null},
+  ram:{w:null,target:0,alloc:0,allocErr:null,bytes:0,hist:[],errs:0,pass:0,crashed:0,done:false},
+  disk:{w:null,mode:'–',mb:0,passes:[],errs:0,err:null,live:0,phase:'',hist:[],maxW:0,stopped:false},
+  net:{provider:null,lat:[],dl:[],ul:[],ok:0,fail:0,offline:0},
+  sys:{b:null,b0:null,jumps:0,chargingAll:true,dischargingAll:true,pState:'n/a',pCount:{},lag:0,lagMax:0,hist:[],po:null,lagId:0}};}
+
+function startCPU(st){
+  const n=DEV.threads||4;st.cpu.n=n;st.cpu.acc=new Array(n).fill(0);
+  for(let i=0;i<n;i++){const w=mkWorker(cpuWorker);w.onmessage=e=>{st.cpu.acc[i]+=e.data.ops;st.cpu.errs+=e.data.errs;};w.onerror=()=>{st.cpu.crashed++;};w.postMessage(i);st.cpu.workers.push(w);}
+}
+function startGPU(st){try{if(!GPU.gl)initGL();}catch(e){st.gpu.err=String(e.message||e);return;}st.gpu.raf=requestAnimationFrame(()=>gpuFrame(st));}
+function startRAM(st){
+  const r=st.ram,gb=DEV.mem||4;r.target=Math.max(64,Math.floor(gb*1024*CFG.ramPct/100/16)*16);
+  const w=mkWorker(ramWorker);r.w=w;
+  w.onmessage=e=>{const d=e.data;if(d.type==='alloc'){r.alloc=d.mb;if(d.done){r.done=true;r.allocErr=d.err;}}else{r.bytes+=d.bytes;r.errs+=d.errs;r.pass=d.pass;}};
+  w.onerror=()=>{r.crashed++;};w.postMessage({mb:r.target});
+}
+async function startDisk(st){
+  const d=st.disk;let mb=CFG.diskMB;
+  try{const est=await navigator.storage.estimate(),free=(est.quota-est.usage)/1048576;if(free<mb*1.5)mb=Math.max(16,Math.floor(free/2));}catch(e){}
+  if(!st.running){d.stopped=true;return;}
+  d.mb=mb;txt('disk-size',mb+' MB');
+  const w=mkWorker(diskWorker);d.w=w;
+  w.onmessage=e=>{const m=e.data;if(m.type==='mode')d.mode=m.mode;else if(m.type==='prog'){d.live=m.mbps;d.phase=m.phase;}else if(m.type==='pass'){d.passes.push(m);d.errs+=m.errs;d.maxW=Math.max(d.maxW,m.maxW);}else if(m.type==='error')d.err=m.msg;else if(m.type==='stopped')d.stopped=true;};
+  w.onerror=e=>{d.err='Storage worker crashed '+(e.message||'');d.stopped=true;};
+  w.postMessage({cmd:'start',mb});
+}
+async function startSys(st){
+  const y=st.sys;let exp=performance.now()+100;
+  y.lagId=setInterval(()=>{const n=performance.now(),lag=Math.max(0,n-exp);exp=n+100;if(lag>y.lag)y.lag=lag;},100);
+  if(navigator.getBattery){try{const b=await navigator.getBattery();y.b=b;y.b0={level:b.level,charging:b.charging};let prev=b.level;
+    b.addEventListener('levelchange',()=>{if(!st.running)return;if(!b.charging&&prev-b.level>=0.03)y.jumps++;prev=b.level;});}catch(e){}}
+  if('PressureObserver' in window){try{const po=new PressureObserver(r=>{y.pState=r[r.length-1].state;});await po.observe('cpu',{sampleInterval:1000});y.po=po;if(y.pState==='n/a')y.pState='nominal';}catch(e){}}
+}
+async function requestWake(){try{wakeLock=await navigator.wakeLock.request('screen');}catch(e){wakeLock=null;}}
+document.addEventListener('visibilitychange',()=>{if(S&&S.running&&document.visibilityState==='visible')requestWake();});
+window.addEventListener('beforeunload',e=>{if(S&&S.running){e.preventDefault();e.returnValue='';}});
+
+function start(){
+  const en={};for(const k of KEYS)en[k]=$('en-'+k).checked;
+  if(!KEYS.some(k=>en[k])){alert('Pick at least one component to test.');return;}
+  const st=S=newState(en);st.dur=+$('dur').value;
+  resetTiles(st);setRunningUI(true);
+  if(en.cpu)startCPU(st);if(en.gpu)startGPU(st);if(en.ram)startRAM(st);if(en.disk)startDisk(st);if(en.net)netLoop(st);
+  startSys(st);requestWake();
+  st.tickId=setInterval(()=>tick(st),1000);
+}
+async function stop(reason){
+  const st=S;if(!st||!st.running)return;
+  st.running=false;st.reason=reason;st.elapsed=(performance.now()-st.t0)/1000;
+  clearInterval(st.tickId);clearInterval(st.sys.lagId);
+  st.cpu.workers.forEach(w=>w.terminate());if(st.ram.w)st.ram.w.terminate();cancelAnimationFrame(st.gpu.raf);
+  try{if(st.sys.po)st.sys.po.disconnect();}catch(e){}
+  try{if(wakeLock)await wakeLock.release();}catch(e){}wakeLock=null;
+  const b=$('startBtn');b.disabled=true;b.textContent='Finishing…';
+  if(st.disk.w){st.disk.w.postMessage({cmd:'stop'});const t=performance.now();while(!st.disk.stopped&&performance.now()-t<4000)await sleep(100);st.disk.w.terminate();}
+  setRunningUI(false);
+  LAST=assess(st);applyTileStatus(st,LAST);showReport(LAST);
+}
+
+/* ---------- per-second sampling + UI ---------- */
+function base(h){const a=valid(h);return a.length>=18?avg(a.slice(3,18)):null;}
+function live(k,state){const d=$('d-'+k);d.className='dot '+state;txt('s-'+k,{run:'Running',warn:'Check',bad:'Errors',idle:'Idle',off:'Off'}[state]||state);}
+function tick(st){
+  if(!st.running)return;
+  const now=performance.now(),dt=Math.max(0.2,(now-st.last)/1000),hidden=document.hidden,el=(now-st.t0)/1000;st.last=now;st.sec++;if(hidden)st.hiddenSec++;
+  if(st.en.cpu){const c=st.cpu,tot=c.acc.reduce((a,b)=>a+b,0);c.acc.fill(0);c.hist.push(tot/1e6/dt);}
+  if(st.en.gpu){const g=st.gpu;g.hist.push(hidden||!GPU.ok||g.err?null:g.frames/dt);g.frames=0;if(!hidden&&!g.err&&st.sec%10===5)gpuCheck(st);}
+  if(st.en.ram){const r=st.ram;r.hist.push(r.done?r.bytes/1048576/dt:null);r.bytes=0;}
+  if(st.en.disk){const d=st.disk;d.hist.push(d.phase==='write'?d.live:null);}
+  const y=st.sys;if(!hidden)y.lagMax=Math.max(y.lagMax,y.lag);y.hist.push(hidden?null:y.lag);y.lag=0;
+  if(y.b){if(y.b.charging)y.dischargingAll=false;else y.chargingAll=false;}
+  y.pCount[y.pState]=(y.pCount[y.pState]||0)+1;
+  render(st,el);
+  if(st.dur>0&&el>=st.dur)stop('timer');
+}
+function render(st,el){
+  txt('elapsed',fmtTime(el)+(st.dur?' / '+fmtTime(st.dur):''));
+  $('prog').style.width=st.dur?Math.min(100,el/st.dur*100)+'%':'100%';
+  if(st.en.cpu){const c=st.cpu,h=c.hist,cur=last(h),b=base(h);
+    txt('cpu-big',fmt(cur,0));txt('cpu-thr',c.n);txt('cpu-base',b?fmt(b,0):'measuring…');txt('cpu-pct',b&&cur?fmt(cur/b*100,0)+'%':'–');txt('cpu-err',c.errs+(c.crashed?` (+${c.crashed} crash)`:''));
+    live('cpu',c.errs||c.crashed?'bad':'run');spark('cpu-spark',h,'#4f8cff',b);}
+  if(st.en.gpu){const g=st.gpu,h=g.hist,cur=last(h),b=base(h);
+    txt('gpu-big',g.err?'n/a':fmt(cur,0));txt('gpu-pct',b&&cur?fmt(cur/b*100,0)+'%':'–');txt('gpu-chk',g.checks?`${g.checks-g.mism}/${g.checks} OK`:'pending');txt('gpu-load',CFG.gpu);txt('gpu-lost',g.ctxLost);
+    live('gpu',g.err||g.ctxLost||g.mism?'bad':'run');spark('gpu-spark',h,'#b06cff',b);}
+  if(st.en.ram){const r=st.ram;
+    txt('ram-big',fmt(r.alloc));txt('ram-tgt',fmt(r.target)+' MB');txt('ram-bw',r.done?fmt(last(r.hist),0)+' MB/s':'allocating…');txt('ram-pass',r.pass);txt('ram-err',r.errs);
+    live('ram',r.errs||r.crashed?'bad':r.allocErr?'warn':'run');spark('ram-spark',r.hist,'#2ecc71');}
+  if(st.en.disk){const d=st.disk,lp=d.passes[d.passes.length-1];
+    txt('disk-big',d.phase==='write'?fmt(d.live,0):lp?fmt(lp.w,0):'–');txt('disk-read',lp?fmt(lp.r,0)+' MB/s':d.phase==='read'?fmt(d.live,0)+' MB/s':'–');
+    txt('disk-phase',d.err?'error':d.phase||'starting');txt('disk-pass',d.passes.length);txt('disk-err',d.errs);txt('disk-mode',d.mode);
+    live('disk',d.errs?'bad':d.err?'warn':'run');spark('disk-spark',d.hist,'#f5b301');}
+  if(st.en.net){const n=st.net,l20=n.lat.slice(-20),tot=n.ok+n.fail,loss=tot?n.fail/tot*100:0;
+    txt('net-big',fmt(last(n.lat),0));txt('net-dl',n.dl.length?fmt(last(n.dl),1)+' Mbps':'–');txt('net-ul',n.ul.length?fmt(last(n.ul),1)+' Mbps':'–');
+    txt('net-jit',l20.length>2?fmt(sd(l20),0)+' ms':'–');txt('net-loss',tot?fmt(loss,1)+'%':'–');txt('net-srv',n.provider||'probing…');txt('net-off',n.offline);
+    live('net',n.offline||loss>10||n.provider==='unreachable'?'bad':loss>2?'warn':'run');spark('net-spark',n.lat,'#3fd0d0');}
+  const y=st.sys;
+  txt('sys-big',y.b?fmt(y.b.level*100,0)+'%':'n/a');txt('sys-chg',y.b?(y.b.charging?'plugged in':'on battery'):'n/a');
+  if(y.b&&y.b0&&!y.b.charging&&el>=300)txt('sys-drain',fmt((y.b0.level-y.b.level)*100/(el/3600),0)+'%/h');else txt('sys-drain',y.b&&!y.b.charging?'after 5 min':'–');
+  txt('sys-pres',y.pState);txt('sys-lag',fmt(y.lagMax,0)+' ms');txt('sys-wake',wakeLock&&!wakeLock.released?'held':'not held');txt('sys-hid',st.hiddenSec?fmtTime(st.hiddenSec):'none');
+  live('sys',y.pState==='critical'?'warn':'run');spark('sys-spark',y.hist,'#ff7a59');
+}
+function resetTiles(st){
+  for(const k of KEYS){const on=st?st.en[k]:$('en-'+k).checked;$('t-'+k).classList.toggle('off',!on);live(k,on?(st?'run':'idle'):'off');}
+  live('sys',st?'run':'idle');
+  ['cpu-big','cpu-base','cpu-pct','gpu-big','gpu-pct','gpu-chk','ram-big','ram-tgt','ram-bw','disk-big','disk-read','disk-phase','disk-mode','disk-size','net-big','net-dl','net-ul','net-jit','net-loss','net-srv','sys-big','sys-chg','sys-drain','sys-pres','sys-lag','sys-wake','sys-hid'].forEach(i=>txt(i,'–'));
+  ['cpu-err','gpu-lost','ram-pass','ram-err','disk-pass','disk-err','net-off'].forEach(i=>txt(i,'0'));
+  txt('cpu-thr',DEV.threads||'–');txt('gpu-load',CFG.gpu);
+  document.querySelectorAll('canvas.spark').forEach(c=>{const x=c.getContext('2d');x.setTransform(1,0,0,1,0,0);x.clearRect(0,0,c.width,c.height);});
+}
+function setRunningUI(on){
+  const b=$('startBtn');b.disabled=false;b.textContent=on?'Stop test':'Start test';b.classList.toggle('stop',on);
+  for(const k of KEYS)$('en-'+k).disabled=on;$('dur').disabled=on;$('setBtn').disabled=on;$('repBtn').disabled=on||!LAST;
+  txt('hint',on?'Testing… keep this tab in front (background tabs get throttled). Press Stop at any time for the health report.':'Tips: close other tabs, keep this tab in front, and test for 10+ minutes so heat builds up. Unplug to measure battery drain; plug in to check the charger.');
+}
+function applyTileStatus(st,rep){
+  for(const c of rep.comps){const d=$('d-'+c.key);if(!d)continue;d.className='dot '+c.lvl;txt('s-'+c.key,LBL[c.lvl]);}
+  for(const k of KEYS)if(!st.en[k])live(k,'off');
+}
+
+/* ---------- health assessment ---------- */
+const RANK={ok:0,info:0,warn:1,bad:2},LBL={ok:'PASS',warn:'WARN',bad:'FAIL'};
+const F=(l,t)=>({l,t});
+function phase(h){
+  const a=valid(h);if(a.length<20)return null;
+  const warm=3,nb=Math.min(15,Math.floor((a.length-warm)/4)),b=avg(a.slice(warm,warm+nb));
+  const tail=a.slice(-Math.max(nb,Math.min(60,Math.floor(a.length/4)))),s=avg(tail);
+  return{base:b,sus:s,ratio:b>0?s/b:1,cv:s>0?sd(tail)/s:0,mean:avg(a.slice(warm))};
+}
+function thr(ps,label){
+  if(!ps)return F('info',`Test too short to measure sustained ${label} (needs at least ~1 minute).`);
+  const pct=Math.round(ps.ratio*100);
+  if(ps.ratio>=0.8)return F('ok',`Held ${pct}% of initial ${label} under sustained load — no significant throttling.`);
+  if(ps.ratio>=0.6)return F('warn',`Fell to ${pct}% of initial ${label} — moderate thermal throttling. Check that vents/fan are clear of dust.`);
+  return F('bad',`Fell to ${pct}% of initial ${label} — severe throttling. Likely a cooling problem (blocked vents, failing fan, dried thermal paste).`);
+}
+function comp(key,name,metrics,findings){
+  const lvl=findings.reduce((m,f)=>RANK[f.l]>RANK[m]?f.l:m,'ok');
+  const score=Math.max(0,100-findings.reduce((s,f)=>s+(f.l==='warn'?15:f.l==='bad'?45:0),0));
+  return{key,name,lvl,score,metrics,findings};
+}
+function assess(st){
+  const dur=st.elapsed,R={date:new Date(),dur,reason:st.reason,comps:[],notes:[]};
+  if(st.en.cpu){const c=st.cpu,ps=phase(c.hist),f=[];
+    if(c.crashed)f.push(F('bad',`${c.crashed} CPU worker(s) crashed.`));
+    if(c.errs)f.push(F('bad',`${c.errs} calculation error(s) — the CPU produced wrong results under load. Sign of instability (overheating or failing hardware).`));
+    else f.push(F('ok','Every calculation was verified correct.'));
+    f.push(thr(ps,'CPU speed'));
+    if(ps&&ps.cv>0.25)f.push(F('warn',`Speed swung by ±${Math.round(ps.cv*100)}% late in the test — unstable clocks.`));
+    R.comps.push(comp('cpu','CPU',[['Threads',c.n],['Average',fmt(ps?ps.mean:avg(valid(c.hist)),0)+' Mops/s'],['Initial',ps?fmt(ps.base,0):'–'],['Sustained',ps?fmt(ps.sus,0):'–'],['Errors',c.errs]],f));}
+  if(st.en.gpu){const g=st.gpu,ps=phase(g.hist),f=[];
+    if(g.err)f.push(F('bad','GPU test could not start: '+g.err));
+    else{
+      if(g.ctxLost)f.push(F('bad',`Graphics context lost ${g.ctxLost} time(s) — the GPU or its driver reset under load.`));
+      if(g.mism)f.push(F('bad',`${g.mism} of ${g.checks} render checks produced different pixels — inconsistent GPU output.`));
+      else if(g.checks)f.push(F('ok',`All ${g.checks} render checks matched.`));
+      f.push(thr(ps,'frame rate'));
+      if(ps&&ps.sus<5)f.push(F('info','Very low frame rate at this load level. Not a fault by itself — compare with the same model or lower the GPU load.'));
+    }
+    R.comps.push(comp('gpu','GPU',[['API',GPU.api||'–'],['Load',CFG.gpu],['Average',ps?fmt(ps.mean,1)+' FPS':'–'],['Initial',ps?fmt(ps.base,1):'–'],['Sustained',ps?fmt(ps.sus,1):'–'],['Render checks',g.checks?`${g.checks-g.mism}/${g.checks}`:'–'],['Resets',g.ctxLost]],f));}
+  if(st.en.ram){const r=st.ram,ps=phase(r.hist),f=[];
+    if(r.crashed)f.push(F('bad','Memory test worker crashed (possibly ran out of memory).'));
+    if(r.errs)f.push(F('bad',`${r.errs} memory verification error(s) — data changed after being written. Strong sign of faulty RAM.`));
+    else if(r.pass>0)f.push(F('ok',`${r.pass} write/verify pass(es) over ${fmt(r.alloc)} MB with no errors.`));
+    else f.push(F('warn','No complete memory pass finished — run the test longer.'));
+    if(r.allocErr||(r.done&&r.alloc<r.target))f.push(F('warn',`Only ${fmt(r.alloc)} of ${fmt(r.target)} MB could be allocated — low free memory or a browser limit.`));
+    if(ps&&ps.ratio<0.6)f.push(F('warn',`Memory bandwidth fell to ${Math.round(ps.ratio*100)}% of initial — thermal throttling.`));
+    R.comps.push(comp('ram','RAM',[['Tested',fmt(r.alloc)+' MB'],['Target',fmt(r.target)+' MB'],['Bandwidth',ps?fmt(ps.mean,0)+' MB/s':'–'],['Passes',r.pass],['Errors',r.errs]],f));}
+  if(st.en.disk){const d=st.disk,P=d.passes,f=[],ws=P.map(p=>p.w),opfs=d.mode==='OPFS';
+    if(d.err)f.push(F('warn','Storage test problem: '+d.err));
+    if(d.errs)f.push(F('bad',`${d.errs} block(s) read back differently than written — possible failing storage.`));
+    else if(P.length)f.push(F('ok',`${P.length} write/read/verify pass(es) of ${d.mb} MB with no errors.`));
+    else if(!d.err)f.push(F('warn','No complete storage pass finished — run longer or choose a smaller file in Settings.'));
+    if(P.length&&opfs&&avg(ws)<10)f.push(F('warn',`Slow sustained writes (${fmt(avg(ws),1)} MB/s) — storage may be worn or nearly full.`));
+    if(P.length>=3){const a=ws[0],z=avg(ws.slice(-2));if(z<a*0.5)f.push(F('warn',`Write speed fell to ${Math.round(z/a*100)}% of the first pass — storage slows under sustained load.`));}
+    if(d.maxW>(opfs?2000:5000))f.push(F('warn',`Slowest single 1 MB write took ${fmt(d.maxW/1000,1)} s — storage stalls.`));
+    R.comps.push(comp('disk','Storage',[['API',d.mode],['File',d.mb+' MB'],['Passes',P.length],['Avg write',P.length?fmt(avg(ws),0)+' MB/s':'–'],['Avg read*',P.length?fmt(avg(P.map(p=>p.r)),0)+' MB/s':'–'],['Slowest 1 MB write',P.length?fmt(d.maxW,0)+' ms':'–'],['Errors',d.errs]],f));}
+  if(st.en.net){const n=st.net,f=[],tot=n.ok+n.fail,loss=tot?n.fail/tot*100:0,ml=median(n.lat),jit=sd(n.lat.slice(1));
+    if(!n.ok){f.push(F('bad','Could not reach any test server — offline, or the test sites are blocked by a web filter.'));}
+    else{
+      if(n.offline)f.push(F('bad',`Connection dropped ${n.offline} time(s) during the test.`));
+      f.push(loss>10?F('bad',`${fmt(loss,1)}% of ${tot} requests failed.`):loss>2?F('warn',`${fmt(loss,1)}% of ${tot} requests failed.`):F('ok',`${tot} requests, ${fmt(loss,1)}% failed.`));
+      if(ml>150)f.push(F('warn',`High latency (median ${fmt(ml,0)} ms).`));
+      if(jit>50)f.push(F('warn',`High jitter (${fmt(jit,0)} ms) — unstable Wi-Fi link.`));
+      if(n.dl.length>=3&&sd(n.dl)/avg(n.dl)>0.6)f.push(F('warn','Download speed was very inconsistent — weak signal, interference, or congestion.'));
+      f.push(F('info','Results include the Wi-Fi and building network, not just this computer.'));
+    }
+    R.comps.push(comp('net','Network',[['Server',n.provider||'–'],['Median latency',fmt(ml,0)+' ms'],['Jitter',fmt(jit,0)+' ms'],['Failed',fmt(loss,1)+'%'],['Avg down',n.dl.length?fmt(avg(n.dl),1)+' Mbps':'–'],['Avg up',n.ul.length?fmt(avg(n.ul),1)+' Mbps':'–'],['Drops',n.offline]],f));}
+  {const y=st.sys,f=[],m=[];
+    if(y.b&&y.b0){const b=y.b,l0=y.b0.level*100,l1=b.level*100,hrs=dur/3600;
+      m.push(['Level',`${fmt(l0)}% → ${fmt(l1)}%`]);
+      m.push(['Power',y.dischargingAll?'on battery':y.chargingAll?'plugged in':'changed during test']);
+      if(y.dischargingAll){
+        if(hrs>=0.08&&l0-l1>=2){const rate=(l0-l1)/hrs;m.push(['Drain under load',fmt(rate,0)+'%/h']);m.push(['Full-load runtime',fmt(100/rate,1)+' h from full']);
+          f.push(rate>60?F('warn',`Drained ~${fmt(rate,0)}%/hour under full load (≈${fmt(100/rate,1)} h from full) — battery may be worn.`):F('ok',`Drained ~${fmt(rate,0)}%/hour under full load (≈${fmt(100/rate,1)} h from full).`));}
+        else f.push(F('info','Run at least 10 minutes on battery to measure drain rate and runtime.'));
+        if(isFinite(b.dischargingTime)&&b.dischargingTime>0&&b.level>0)m.push(['OS runtime estimate',fmt(b.dischargingTime/3600/b.level,1)+' h from full']);
+      }else if(y.chargingAll){
+        if(l1<l0-2)f.push(F('warn',`Battery fell ${fmt(l0-l1)}% while plugged in — charger may be underpowered or failing.`));
+        else if(l0>=99&&l1>=99)f.push(F('info','Plugged in at 100% (or no battery present) — unplug and re-run to test the battery.'));
+        else{if(hrs>=0.08&&l1>l0)m.push(['Charge rate',fmt((l1-l0)/hrs,0)+'%/h under load']);f.push(F('ok','Charger kept up under full load.'));}
+      }else f.push(F('info','Charger was connected or disconnected during the test, so rates were not measured.'));
+      if(y.jumps)f.push(F('warn',`Battery level dropped suddenly ${y.jumps} time(s) (3%+ in one step) — typical of a worn battery or a confused fuel gauge.`));
+      f.push(F('info',battTip()));
+      R.comps.push(comp('batt','Battery',m,f));
+    }
+    if(y.po){const tot=Object.values(y.pCount).reduce((a,b)=>a+b,0)||1,cr=(y.pCount.critical||0)/tot,se=(y.pCount.serious||0)/tot;
+      m.push(['Thermal',`serious ${Math.round(se*100)}%, critical ${Math.round(cr*100)}%`]);
+      if(cr>0.1)f.push(F('warn',`Chrome reported CRITICAL system pressure ${Math.round(cr*100)}% of the time — the device hit its thermal/power limit.`));}
+    else m.push(['Thermal','not reported']);
+    m.push(['Max UI freeze',fmt(y.lagMax,0)+' ms']);
+    if(y.lagMax>2000)f.push(F('warn',`The page froze for up to ${fmt(y.lagMax/1000,1)} s — the system is struggling (possibly swapping memory).`));
+    const hp=st.sec?st.hiddenSec/st.sec:0;m.push(['In background',Math.round(hp*100)+'%']);
+    if(hp>0.1)f.push(F('info',`Tab was in the background ${Math.round(hp*100)}% of the test; GPU and timing results are less reliable.`));
+    R.comps.push(comp('sys','System',m,f));}
+  if(dur<120)R.notes.push('Short test — run 10+ minutes for reliable throttling and stability results.');
+  R.notes.push('Throttling is relative to this unit’s own first minute. Fanless laptops and Chromebooks throttle more by design, so compare against a known-good unit of the same model.');
+  if(st.en.disk)R.notes.push('*Storage reads may be served from cache and look faster than the drive really is.');
+  return R;
+}
+const VERDICT={ok:'Healthy — no problems detected.',warn:'Some concerns — review the warnings below.',bad:'Problems detected — see the failures below.'};
+function battTip(){
+  const ua=navigator.userAgent,where=/CrOS/.test(ua)?'On ChromeOS, open the Diagnostics app (chrome://diagnostics) for battery health % and cycle count.'
+    :/Windows/.test(ua)?'On Windows, run "powercfg /batteryreport" and compare Full Charge Capacity to Design Capacity.'
+    :/Mac/.test(ua)?'On macOS, see System Settings › Battery › Battery Health, or System Information › Power for cycle count.'
+    :'On Linux, check /sys/class/power_supply/BAT0 (energy_full vs energy_full_design).';
+  return 'Browsers cannot read battery wear or cycle count directly. '+where;
+}
+function summarize(R){ // stress results + any peripheral results
+  const comps=R?[...R.comps]:[],pc=periphComp();if(pc)comps.push(pc);
+  const tested=comps.filter(c=>c.key!=='sys'||c.findings.some(f=>f.l!=='info'));
+  return{comps,lvl:comps.reduce((m,c)=>RANK[c.lvl]>RANK[m]?c.lvl:m,'ok'),score:Math.round(avg(tested.map(c=>c.score)))};
+}
+function showReport(R0){
+  const R=Object.assign({},R0,summarize(R0));
+  const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  let h=`<div class="verdict"><div class="score">${R.score}</div><div><span class="badge ${R.lvl}">${LBL[R.lvl]}</span> <b>${VERDICT[R.lvl]}</b><div class="dim">${fmtTime(R.dur)} test, ended ${R.reason==='timer'?'by timer':'by user'} · ${R.date.toLocaleString()}</div></div></div><div class="rgrid">`;
+  for(const c of R.comps){h+=`<div class="rc"><h3>${c.name} <span class="badge ${c.lvl}">${LBL[c.lvl]}</span><span class="sc">${c.score}/100</span></h3><table>${c.metrics.map(([k,v])=>`<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('')}</table><ul>${c.findings.map(f=>`<li class="${f.l}">${esc(f.t)}</li>`).join('')}</ul></div>`;}
+  h+=`</div><div class="notes">${R.notes.map(esc).join('<br>')}</div>`;
+  $('repBody').innerHTML=h;$('repDlg').showModal();
+}
+function reportText(R0){
+  const R=Object.assign({},R0,summarize(R0));
+  const L=['WEB STRESS TEST REPORT',`Date: ${R.date.toLocaleString()}`,`Duration: ${fmtTime(R.dur)} (ended ${R.reason==='timer'?'by timer':'by user'})`,
+    `Device: ${DEV.os}, ${DEV.threads} threads, ${DEV.mem?(DEV.mem>=8?'8+':DEV.mem)+' GB':'?'} RAM, GPU: ${DEV.gpu}`,`Browser: ${DEV.ua}`,'',
+    `OVERALL: ${LBL[R.lvl]} (${R.score}/100) - ${VERDICT[R.lvl]}`,''];
+  for(const c of R.comps){L.push(`[${c.name}] ${LBL[c.lvl]} ${c.score}/100`);c.metrics.forEach(([k,v])=>L.push(`  ${k}: ${v}`));c.findings.forEach(f=>L.push(`  - (${f.l}) ${f.t}`));L.push('');}
+  R.notes.forEach(n=>L.push('Note: '+n));return L.join('\n');
+}
+
+/* ---------- peripherals ---------- */
+const escH=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const PER={cam:{s:null,info:'',warn:[]},mic:{s:null,info:'',warn:[]},spk:{s:null,info:'',warn:[]},keys:{s:null,info:'',warn:[]},touch:{s:null,info:'',warn:[]}};
+const PNAME={cam:'Webcam',mic:'Microphone',spk:'Speakers',keys:'Keyboard',touch:'Trackpad/touch'};
+document.querySelectorAll('.pf').forEach(el=>{const k=el.dataset.k;el.innerHTML='<button class="pass">Pass</button><button class="fail">Fail</button>';
+  el.querySelectorAll('button').forEach(b=>b.onclick=()=>{const v=b.classList.contains('pass')?'pass':'fail';PER[k].s=PER[k].s===v?null:v;el.querySelectorAll('button').forEach(x=>x.classList.toggle('on',!!PER[k].s&&x.classList.contains(PER[k].s)));});});
+function periphComp(){
+  const ks=Object.keys(PER).filter(k=>PER[k].s||PER[k].info);if(!ks.length)return null;
+  const m=[],f=[];
+  for(const k of ks){const p=PER[k];m.push([PNAME[k],p.s?p.s.toUpperCase():'not marked']);
+    if(p.s==='fail')f.push(F('bad',`${PNAME[k]} marked as failed${p.info?' ('+p.info+')':''}.`));
+    else if(p.info)f.push(F(p.s==='pass'?'ok':'info',`${PNAME[k]}: ${p.info}`));
+    for(const w of p.warn)f.push(F('warn',`${PNAME[k]}: ${w}`));}
+  return comp('per','Peripherals',m,f);
+}
+function periphText(){const c=periphComp();if(!c)return'No peripheral results yet.';
+  return['PERIPHERAL TEST',`Date: ${new Date().toLocaleString()}`,`Device: ${DEV.os}`,'',...c.metrics.map(([k,v])=>`${k}: ${v}`),'',...c.findings.map(f=>`- (${f.l}) ${f.t}`)].join('\n');}
+const mediaErr=(e,what)=>({NotAllowedError:`Permission to use the ${what} was denied. Allow it from the icon in the address bar, then try again.`,NotFoundError:`No ${what} found.`,NotReadableError:`The ${what} is in use by another app or failed to start.`,OverconstrainedError:`That ${what} can't be opened with these settings.`}[e&&e.name]||`Could not start the ${what}: ${e&&e.message||e}`);
+async function listDevs(kind,sel,cur){
+  try{const d=(await navigator.mediaDevices.enumerateDevices()).filter(x=>x.kind===kind&&x.deviceId);if(!d.length)return;
+    cur=cur||sel.value;sel.innerHTML=d.map((x,i)=>`<option value="${escH(x.deviceId)}">${escH(x.label||(kind==='videoinput'?'Camera ':'Microphone ')+(i+1))}</option>`).join('');
+    if(cur&&d.some(x=>x.deviceId===cur))sel.value=cur;}catch(e){}
+}
+/* webcam */
+let camStream=null,camTok=0;
+function camStop(){camTok++;if(camStream)camStream.getTracks().forEach(t=>t.stop());camStream=null;$('camVid').srcObject=null;txt('camBtn','Start');}
+async function camStart(){
+  camStop();const tok=camTok;
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){txt('camInfo','Camera API unavailable (open the page from https:// or a local file).');return;}
+  txt('camInfo','Starting…');
+  try{
+    const id=$('camSel').value,v={width:{ideal:1920},height:{ideal:1080}};if(id)v.deviceId={exact:id};
+    const st=await navigator.mediaDevices.getUserMedia({video:v});if(tok!==camTok){st.getTracks().forEach(t=>t.stop());return;}
+    camStream=st;const vid=$('camVid'),tr=st.getVideoTracks()[0];vid.srcObject=st;await vid.play();txt('camBtn','Stop');
+    await listDevs('videoinput',$('camSel'),tr.getSettings().deviceId);
+    tr.onended=()=>{if(tok===camTok){PER.cam.warn=['camera stream ended unexpectedly (disconnected?)'];txt('camInfo','⚠ Camera stream ended unexpectedly.');}};
+    const cv=document.createElement('canvas');cv.width=32;cv.height=18;const cx=cv.getContext('2d',{willReadFrequently:true});
+    let frames=0,t0=performance.now();const rvfc=!!vid.requestVideoFrameCallback;
+    const loop=()=>{if(tok!==camTok)return;frames++;const n=performance.now();
+      if(n-t0>=1000){const fps=frames*1000/(n-t0);frames=0;t0=n;
+        cx.drawImage(vid,0,0,32,18);const px=cx.getImageData(0,0,32,18).data;let sum=0;for(let i=0;i<px.length;i+=4)sum+=px[i]+px[i+1]+px[i+2];
+        const br=sum/(px.length/4)/7.65,s=tr.getSettings();
+        PER.cam.info=`${tr.label||'camera'}, ${s.width}×${s.height}${rvfc?' @ '+fmt(fps,0)+' fps':''}`;
+        PER.cam.warn=br<2.5?['image is nearly black — check the privacy shutter or lens cover']:rvfc&&fps<10?[`low frame rate (${fmt(fps,0)} fps)`]:[];
+        txt('camInfo',`${s.width}×${s.height}${rvfc?' · '+fmt(fps,0)+' fps':''} · brightness ${fmt(br,0)}%`+(PER.cam.warn.length?' · ⚠ '+PER.cam.warn[0]:' · check focus and colors'));}
+      if(rvfc)vid.requestVideoFrameCallback(loop);else requestAnimationFrame(loop);};
+    if(rvfc)vid.requestVideoFrameCallback(loop);else requestAnimationFrame(loop);
+  }catch(e){if(tok!==camTok)return;txt('camInfo',mediaErr(e,'camera'));PER.cam.info=mediaErr(e,'camera');if(e&&e.name==='NotFoundError')PER.cam.warn=['no camera detected'];}
+}
+$('camBtn').onclick=()=>camStream?camStop():camStart();
+$('camSel').onchange=()=>{if(camStream)camStart();};
+/* microphone */
+let micStream=null,micTok=0,actx=null;
+const audio=()=>{if(!actx)actx=new (window.AudioContext||window.webkitAudioContext)();if(actx.state==='suspended')actx.resume();return actx;};
+function micStop(){micTok++;if(micStream)micStream.getTracks().forEach(t=>t.stop());micStream=null;txt('micBtn','Start');$('recBtn').disabled=true;$('micLvl').style.width='0';}
+async function micStart(){
+  micStop();const tok=micTok;
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){txt('micInfo','Microphone API unavailable (open the page from https:// or a local file).');return;}
+  txt('micInfo','Starting…');
+  try{
+    const id=$('micSel').value,a={echoCancellation:false,noiseSuppression:false,autoGainControl:false};if(id)a.deviceId={exact:id};
+    const st=await navigator.mediaDevices.getUserMedia({audio:a});if(tok!==micTok){st.getTracks().forEach(t=>t.stop());return;}
+    micStream=st;const tr=st.getAudioTracks()[0];txt('micBtn','Stop');$('recBtn').disabled=!window.MediaRecorder;
+    await listDevs('audioinput',$('micSel'),tr.getSettings().deviceId);
+    const ac=audio(),an=ac.createAnalyser();an.fftSize=2048;ac.createMediaStreamSource(st).connect(an);
+    const buf=new Float32Array(an.fftSize),hist=[];let peak=-100,lastT=0,t0=performance.now();
+    const loop=t=>{if(tok!==micTok)return;an.getFloatTimeDomainData(buf);let s=0;for(let i=0;i<buf.length;i++)s+=buf[i]*buf[i];
+      const db=Math.max(-100,20*Math.log10(Math.sqrt(s/buf.length)||1e-5));if(db>peak)peak=db;
+      $('micLvl').style.width=Math.max(0,Math.min(100,(db+60)/60*100))+'%';
+      if(t-lastT>=100){lastT=t;hist.push(Math.max(0,db+60));if(hist.length>600)hist.shift();spark('micCv',hist,'#3fd0d0');
+        PER.mic.info=`${tr.label||'microphone'}, peak ${fmt(peak,0)} dBFS`;
+        PER.mic.warn=performance.now()-t0>5000&&peak<-55?['almost no sound picked up — mic may be muted, disabled or dead']:[];
+        txt('micInfo',`Level ${fmt(db,0)} dBFS · peak ${fmt(peak,0)} dBFS`+(PER.mic.warn.length?' · ⚠ '+PER.mic.warn[0]:' · speak, then record and play back'));}
+      requestAnimationFrame(loop);};
+    requestAnimationFrame(loop);
+  }catch(e){if(tok!==micTok)return;txt('micInfo',mediaErr(e,'microphone'));PER.mic.info=mediaErr(e,'microphone');if(e&&e.name==='NotFoundError')PER.mic.warn=['no microphone detected'];}
+}
+$('micBtn').onclick=()=>micStream?micStop():micStart();
+$('micSel').onchange=()=>{if(micStream)micStart();};
+$('recBtn').onclick=()=>{if(!micStream)return;const rec=new MediaRecorder(micStream),ch=[];
+  rec.ondataavailable=e=>{if(e.data.size)ch.push(e.data);};
+  rec.onstop=()=>{const a=$('recAud');if(a.src)URL.revokeObjectURL(a.src);a.src=URL.createObjectURL(new Blob(ch,{type:rec.mimeType}));a.play().catch(()=>{});txt('recBtn','Record 3 s');$('recBtn').disabled=!micStream;};
+  rec.start();$('recBtn').disabled=true;txt('recBtn','Recording…');setTimeout(()=>{if(rec.state!=='inactive')rec.stop();},3000);};
+/* speakers */
+let spkNodes=[];const spkPlayed=new Set();
+function spkStop(){spkNodes.forEach(n=>{try{n.stop();}catch(e){}});spkNodes=[];}
+function spkNote(name){spkPlayed.add(name);PER.spk.info='played '+[...spkPlayed].join(', ');}
+function tone(pan){spkStop();const a=audio(),o=a.createOscillator(),g=a.createGain(),t=a.currentTime,v=+$('spkVol').value;
+  o.frequency.value=440;g.gain.setValueAtTime(0,t);
+  for(let i=0;i<3;i++){const b=t+i*0.4;g.gain.setValueAtTime(0,b);g.gain.linearRampToValueAtTime(v,b+0.02);g.gain.setValueAtTime(v,b+0.25);g.gain.linearRampToValueAtTime(0,b+0.28);}
+  let out=g;if(a.createStereoPanner){const p=a.createStereoPanner();p.pan.value=pan;g.connect(p);out=p;}
+  o.connect(g);out.connect(a.destination);o.start(t);o.stop(t+1.2);spkNodes=[o];spkNote(pan<0?'left':pan>0?'right':'both');}
+function sweep(){spkStop();const a=audio(),o=a.createOscillator(),g=a.createGain(),t=a.currentTime,v=+$('spkVol').value;
+  o.frequency.setValueAtTime(100,t);o.frequency.exponentialRampToValueAtTime(10000,t+6);
+  g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(v,t+0.05);g.gain.setValueAtTime(v,t+5.9);g.gain.linearRampToValueAtTime(0,t+6);
+  o.connect(g).connect(a.destination);o.start(t);o.stop(t+6.05);spkNodes=[o];spkNote('sweep');}
+document.querySelectorAll('[data-tone]').forEach(b=>b.onclick=()=>tone(+b.dataset.tone));
+$('sweepBtn').onclick=sweep;$('spkStopBtn').onclick=spkStop;
+/* keyboard */
+const KL=s=>[...s].map(c=>['Key'+c,c]);
+const META=/CrOS/.test(navigator.userAgent)?'Search':/Mac/.test(navigator.userAgent)?'⌘':'Win';
+const KB=[[['Escape','Esc'],...Array.from({length:12},(_,i)=>['F'+(i+1),'F'+(i+1)]),['Delete','Del']],
+  [['Backquote','`'],...[...'1234567890'].map(c=>['Digit'+c,c]),['Minus','-'],['Equal','='],['Backspace','⌫',2]],
+  [['Tab','Tab',1.5],...KL('QWERTYUIOP'),['BracketLeft','['],['BracketRight',']'],['Backslash','\\',1.5]],
+  [['CapsLock','Caps',1.8],...KL('ASDFGHJKL'),['Semicolon',';'],['Quote',"'"],['Enter','Enter',2.2]],
+  [['ShiftLeft','Shift',2.3],...KL('ZXCVBNM'),['Comma',','],['Period','.'],['Slash','/'],['ShiftRight','Shift',2.7]],
+  [['ControlLeft','Ctrl',1.4],['MetaLeft',META,1.2],['AltLeft','Alt',1.2],['Space','Space',6],['AltRight','Alt',1.2],['ControlRight','Ctrl',1.2],['ArrowLeft','←'],['ArrowUp','↑'],['ArrowDown','↓'],['ArrowRight','→']]];
+const keyHit=new Set(),keyExtra=new Set();let kbBuilt=false;
+function buildKB(){if(kbBuilt)return;kbBuilt=true;$('kb').innerHTML=KB.map(r=>'<div class="kr">'+r.map(([c,l,w])=>`<div class="k" data-c="${c}" style="flex-grow:${w||1}">${escH(l)}</div>`).join('')+'</div>').join('');}
+function keyStatus(){const tot=KB.flat().length,hit=[...keyHit].filter(c=>document.querySelector(`.k[data-c="${c}"]`)).length;
+  txt('keyInfo',`${hit} of ${tot} keys pressed`);txt('keyExtra','Other keys detected: '+(keyExtra.size?[...keyExtra].join(', '):'none')+'  ·  Keys this layout doesn’t have (or the OS reserves) can be ignored.');
+  PER.keys.info=`${hit} of ${tot} layout keys pressed`+(keyExtra.size?`, plus ${keyExtra.size} other`:'');}
+document.addEventListener('keydown',e=>{if(!$('perDlg').open)return;const tg=e.target.tagName;if(tg==='SELECT'||(tg==='INPUT'&&e.target.type!=='range'))return;
+  e.preventDefault();const code=e.code||e.key,el=document.querySelector(`.k[data-c="${code}"]`);keyHit.add(code);
+  if(el)el.classList.add('hit','down');else keyExtra.add(code||'Unidentified');keyStatus();},true);
+document.addEventListener('keyup',e=>{if(!$('perDlg').open)return;const el=document.querySelector(`.k[data-c="${e.code||e.key}"]`);if(el)el.classList.remove('down');
+  if(e.key==='Meta'||e.key==='OS')document.querySelectorAll('.k.down').forEach(k=>k.classList.remove('down'));},true);
+/* trackpad / touch */
+const TG={cols:10,rows:6,cells:new Uint8Array(60),active:new Set(),maxTouch:0,buttons:new Set(),types:new Set(),scroll:new Set(),trail:[],raf:0};
+const tcv=$('touchCv');
+function touchDraw(){TG.raf=0;const c=tcv,dpr=devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;if(!w||!h)return;
+  const W=Math.round(w*dpr),H=Math.round(h*dpr);if(c.width!==W||c.height!==H){c.width=W;c.height=H;}
+  const x=c.getContext('2d');x.setTransform(dpr,0,0,dpr,0,0);x.clearRect(0,0,w,h);const cw=w/TG.cols,ch=h/TG.rows;
+  for(let r=0;r<TG.rows;r++)for(let q=0;q<TG.cols;q++){x.fillStyle=TG.cells[r*TG.cols+q]?'rgba(46,204,113,.35)':'rgba(255,255,255,.04)';x.fillRect(q*cw+1,r*ch+1,cw-2,ch-2);}
+  for(const p of TG.trail){x.fillStyle=`hsl(${(p[2]*67)%360} 85% 62%)`;x.fillRect(p[0]*w-1.5,p[1]*h-1.5,3,3);}}
+const touchQueue=()=>{if(!TG.raf)TG.raf=requestAnimationFrame(touchDraw);};
+function touchStatus(){const hit=TG.cells.reduce((a,b)=>a+b,0),tot=TG.cells.length;
+  const s=`Coverage ${hit}/${tot}`+(TG.maxTouch?` · up to ${TG.maxTouch} touch point(s) at once`:'')+(TG.buttons.size?` · clicks: ${[...TG.buttons].join(', ')}`:'')+(TG.scroll.size?` · scroll: ${[...TG.scroll].join(', ')}`:'')+(TG.types.size?` · input: ${[...TG.types].join(', ')}`:'');
+  txt('touchInfo',s);PER.touch.info=s;}
+function touchMark(e){const r=tcv.getBoundingClientRect(),fx=(e.clientX-r.left)/r.width,fy=(e.clientY-r.top)/r.height;if(fx<0||fy<0||fx>=1||fy>=1)return;
+  TG.cells[Math.floor(fy*TG.rows)*TG.cols+Math.floor(fx*TG.cols)]=1;TG.trail.push([fx,fy,e.pointerId]);if(TG.trail.length>1500)TG.trail.splice(0,300);TG.types.add(e.pointerType||'mouse');touchQueue();}
+tcv.addEventListener('pointerdown',e=>{e.preventDefault();try{tcv.setPointerCapture(e.pointerId);}catch(x){}TG.active.add(e.pointerId);TG.maxTouch=Math.max(TG.maxTouch,TG.active.size);
+  TG.buttons.add(['left','middle','right','back','forward'][e.button]||'button '+e.button);touchMark(e);touchStatus();});
+tcv.addEventListener('pointermove',e=>{const ev=e.getCoalescedEvents?e.getCoalescedEvents():[e];(ev.length?ev:[e]).forEach(touchMark);touchStatus();});
+['pointerup','pointercancel'].forEach(t=>tcv.addEventListener(t,e=>TG.active.delete(e.pointerId)));
+tcv.addEventListener('contextmenu',e=>e.preventDefault());
+tcv.addEventListener('wheel',e=>{e.preventDefault();if(e.ctrlKey)TG.scroll.add('pinch');else{if(e.deltaY<0)TG.scroll.add('up');if(e.deltaY>0)TG.scroll.add('down');if(e.deltaX<0)TG.scroll.add('left');if(e.deltaX>0)TG.scroll.add('right');}touchStatus();},{passive:false});
+$('touchReset').onclick=()=>{TG.cells.fill(0);TG.trail=[];TG.maxTouch=0;TG.buttons.clear();TG.types.clear();TG.scroll.clear();PER.touch.info='';txt('touchInfo','Reset. Move or drag across every square.');touchQueue();};
+window.addEventListener('resize',()=>{if($('perDlg').open)touchQueue();});
+/* overlay */
+async function copyText(t,btn,label){try{await navigator.clipboard.writeText(t);}catch(e){const a=document.createElement('textarea');a.value=t;document.body.appendChild(a);a.select();document.execCommand('copy');a.remove();}btn.textContent='Copied ✓';setTimeout(()=>btn.textContent=label,1500);}
+$('perBtn').onclick=()=>{buildKB();$('perDlg').showModal();touchQueue();if(navigator.mediaDevices){listDevs('videoinput',$('camSel'));listDevs('audioinput',$('micSel'));}};
+$('perDlg').addEventListener('cancel',e=>e.preventDefault()); // Esc is a key under test, not "close"
+$('perDlg').addEventListener('close',()=>{camStop();micStop();spkStop();});
+$('perClose').onclick=()=>$('perDlg').close();
+$('perCopy').onclick=()=>copyText(periphText(),$('perCopy'),'Copy results');
+
+/* ---------- wiring ---------- */
+$('startBtn').onclick=()=>{if(S&&S.running)stop('user');else start();};
+$('repBtn').onclick=()=>{if(LAST)showReport(LAST);};
+$('repClose').onclick=()=>$('repDlg').close();
+$('repCopy').onclick=()=>copyText(reportText(LAST),$('repCopy'),'Copy report');
+$('repSave').onclick=()=>{const d=LAST.date,p=n=>String(n).padStart(2,'0');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([reportText(LAST)],{type:'text/plain'}));a.download=`stress-report-${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}.txt`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),5000);};
+$('setBtn').onclick=()=>{$('cfg-gpu').value=CFG.gpu;$('cfg-ram').value=CFG.ramPct;$('cfg-disk').value=CFG.diskMB;$('cfg-net').value=CFG.net;$('cfg-url').value=CFG.netUrl;$('setDlg').showModal();};
+$('setCancel').onclick=()=>$('setDlg').close();
+$('setSave').onclick=()=>{CFG.gpu=$('cfg-gpu').value;CFG.ramPct=+$('cfg-ram').value;CFG.diskMB=+$('cfg-disk').value;CFG.net=$('cfg-net').value;CFG.netUrl=$('cfg-url').value.trim();
+  try{localStorage.setItem('cbstress-cfg',JSON.stringify(CFG));}catch(e){}txt('gpu-load',CFG.gpu);$('setDlg').close();};
+for(const k of KEYS)$('en-'+k).onchange=()=>{if(!(S&&S.running)){$('t-'+k).classList.toggle('off',!$('en-'+k).checked);live(k,$('en-'+k).checked?'idle':'off');}};
+devInfo();resetTiles(null);
+</script>
+</body>
+</html>
