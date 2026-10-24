@@ -89,6 +89,12 @@ dialog h2{margin:0 0 10px;font-size:18px}
 #scr{position:fixed;inset:0;z-index:9999;background:#000;cursor:none;overflow:hidden}
 #scr[hidden],#scrEnd[hidden]{display:none}
 #scr.cur{cursor:default}
+#scr{touch-action:none;user-select:none;-webkit-user-select:none}
+#tsDone{position:absolute;transform:translate(-50%,-50%);z-index:2;padding:12px 20px;font:700 16px system-ui,sans-serif;background:var(--accent);color:#fff;border:0;border-radius:10px;box-shadow:0 4px 18px rgba(0,0,0,.5)}
+#tsDone[hidden]{display:none}
+#scrEnd .prow{justify-content:center}
+#scrEnd .prow[hidden]{display:none}
+#scrEnd .rowlbl{min-width:120px;text-align:left;font-weight:600}
 #scrCv{position:absolute;left:0;top:0;display:block}
 #scrHint{position:absolute;left:50%;bottom:24px;transform:translateX(-50%);max-width:94vw;background:rgba(20,22,28,.88);color:#fff;padding:8px 14px;border-radius:8px;font-size:13px;text-align:center;transition:opacity .4s;pointer-events:none}
 #scrHint.hide{opacity:0}
@@ -211,10 +217,13 @@ dialog h2{margin:0 0 10px;font-size:18px}
 <div id="scr" hidden>
   <canvas id="scrCv"></canvas>
   <div id="scrHint"></div>
+  <button id="tsDone" hidden>Done ✓</button>
   <div id="scrEnd" hidden>
     <h2>Screen test complete</h2>
     <div id="scrSum" class="dim"></div>
-    <div class="prow"><button id="scrPass" class="primary" style="background:var(--ok);border-color:var(--ok);color:#111">Pass</button><button id="scrFail" class="primary stop">Fail</button><button id="scrAgain">Run again</button><button id="scrClose">Close</button></div>
+    <div class="prow"><span class="rowlbl">Display</span><span class="pf" data-k="scr"></span></div>
+    <div class="prow" id="tsRow"><span class="rowlbl">Touchscreen</span><span class="pf" data-k="tscr"></span></div>
+    <div class="prow" style="margin-top:6px"><button id="scrAgain">Run again</button><button id="scrClose" class="primary">Done</button></div>
   </div>
 </div>
 
@@ -697,17 +706,19 @@ function reportText(R0){
 
 /* ---------- peripherals ---------- */
 const escH=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const PER={cam:{s:null,info:'',warn:[]},mic:{s:null,info:'',warn:[]},spk:{s:null,info:'',warn:[]},keys:{s:null,info:'',warn:[]},touch:{s:null,info:'',warn:[]}};
-const PNAME={cam:'Webcam',mic:'Microphone',spk:'Speakers',keys:'Keyboard',touch:'Trackpad/touch'};
-const PITEMS=['cam','mic','spk','keys','touch','scr'];
+const PER={cam:{s:null,info:'',warn:[]},mic:{s:null,info:'',warn:[]},spk:{s:null,info:'',warn:[]},keys:{s:null,info:'',warn:[]},touch:{s:null,info:'',warn:[]},tscr:{s:null,info:'',warn:[]}};
+const HAS_TOUCH=navigator.maxTouchPoints>0;
+const PNAME={cam:'Webcam',mic:'Microphone',spk:'Speakers',keys:'Keyboard',touch:'Trackpad/touch',tscr:'Touchscreen'};
+const PITEMS=['cam','mic','spk','keys','touch','scr','tscr'];
 const pState=k=>{const p=PER[k];return!p?'na':p.s||(p.info||p.warn.length?'und':'na');};
 const PSTXT={pass:'Pass',fail:'Fail',und:'Undetermined',na:'Not tested'};
-function pfRefresh(){document.querySelectorAll('.pf').forEach(el=>{const st=pState(el.dataset.k),t=el.querySelector('.pst');t.textContent=PSTXT[st];t.className='pst '+st;});}
+function pfRefresh(){document.querySelectorAll('.pf').forEach(el=>{const k=el.dataset.k,st=pState(k),t=el.querySelector('.pst');t.textContent=PSTXT[st];t.className='pst '+st;
+  el.querySelectorAll('button').forEach(x=>x.classList.toggle('on',!!(PER[k]&&PER[k].s)&&x.classList.contains(PER[k].s)));});}
 document.querySelectorAll('.pf').forEach(el=>{const k=el.dataset.k;el.innerHTML='<span class="pst"></span><button class="pass" title="Click again to clear">Pass</button><button class="fail" title="Click again to clear">Fail</button>';
   el.querySelectorAll('button').forEach(b=>b.onclick=()=>{const v=b.classList.contains('pass')?'pass':'fail';PER[k].s=PER[k].s===v?null:v;el.querySelectorAll('button').forEach(x=>x.classList.toggle('on',!!PER[k].s&&x.classList.contains(PER[k].s)));pfRefresh();updRep();});});
 setInterval(()=>{if($('perDlg').open)pfRefresh();},1000);
 function periphComp(){
-  const ks=PITEMS.filter(k=>PER[k]),st=Object.fromEntries(ks.map(k=>[k,pState(k)]));
+  const ks=PITEMS.filter(k=>PER[k]&&(k!=='tscr'||HAS_TOUCH||PER.tscr.info||PER.tscr.s)),st=Object.fromEntries(ks.map(k=>[k,pState(k)]));
   if(ks.every(k=>st[k]==='na'))return null;
   const m=[],f=[],nt=[];
   for(const k of ks){const p=PER[k];m.push([PNAME[k],LBL[st[k]==='pass'?'ok':st[k]==='fail'?'bad':st[k]]]);
@@ -870,19 +881,23 @@ const SCRP=[
   ['Horizontal lines','Alternating 1-pixel rows: should look like even, steady gray. Look for bands, flicker or lines that stand out.',c=>scrLines(c,false)],
   ['50% gray','Best for impact damage: look for cracks, pressure marks, blotches and uneven brightness.',c=>scrFill(c,'#808080')],
   ['Gradients','Ramps should be smooth: look for stepped bands, tints, or one side brighter than the other.',c=>scrGrad(c)],
+  ['Touchscreen',HAS_TOUCH?'Drag a finger over every square until the screen is green. Squares that never light up are dead zones; broken or jumpy trails mean glitches. Try several fingers at once.':'No touchscreen detected — click or press → to finish.',()=>tsInit(),'touch'],
 ];
 const SCR={on:false,end:false,i:0,flags:new Set(),hintT:0};
 function scrSize(){const dpr=devicePixelRatio||1,w=innerWidth,h=innerHeight;scrCv.width=Math.round(w*dpr);scrCv.height=Math.round(h*dpr);scrCv.style.width=w+'px';scrCv.style.height=h+'px';}
 function scrHint(){const h=$('scrHint');h.classList.remove('hide');$('scr').classList.add('cur');clearTimeout(SCR.hintT);
   SCR.hintT=setTimeout(()=>{h.classList.add('hide');$('scr').classList.remove('cur');},3000);}
 function scrDraw(){
-  if(SCR.end)return;scrSize();const[name,tip,fn]=SCRP[SCR.i];fn(scrCv.getContext('2d'));
-  $('scrHint').innerHTML=`<b>${SCR.i+1}/${SCRP.length} · ${name}</b>${SCR.flags.has(name)?' · <b>⚑ defect flagged</b>':''}<br>${tip}<br><span style="opacity:.75">Click or → next · ← or right-click back · F flag a defect · Esc exit</span>`;scrHint();}
+  if(SCR.end)return;scrSize();const[name,tip,fn,kind]=SCRP[SCR.i];fn(scrCv.getContext('2d'));
+  const keys=kind==='touch'?(HAS_TOUCH?'Pause to show the Done button · → or mouse click skips · Esc exit':'Click or → finish · ← back · Esc exit'):'Click or → next · ← or right-click back · F flag a defect · Esc exit';
+  $('scrHint').innerHTML=`<b>${SCR.i+1}/${SCRP.length} · ${name}</b>${SCR.flags.has(name)?' · <b>⚑ defect flagged</b>':''}<br>${tip}<br><span style="opacity:.75">${keys}</span>`;scrHint();}
 function scrGo(i){
+  tsRecord();$('tsDone').hidden=true;
   if(i<0)i=0;
   if(i>=SCRP.length){SCR.end=true;const f=[...SCR.flags];
     $('scrSum').innerHTML=(f.length?'Defects flagged on: <b>'+escH(f.join(', '))+'</b>':'No defects flagged.')+'<br>Mark the screen as Pass or Fail to add it to the report.';
     if(!PER.scr.s)PER.scr.info=scrInfo();updRep();
+    $('tsRow').hidden=!(HAS_TOUCH||TS.used);pfRefresh();
     $('scrEnd').hidden=false;$('scr').classList.add('cur');clearTimeout(SCR.hintT);$('scrHint').classList.add('hide');return;}
   SCR.end=false;$('scrEnd').hidden=true;SCR.i=i;scrDraw();}
 function scrInfo(){const dpr=devicePixelRatio||1;return`${Math.round(screen.width*dpr)}×${Math.round(screen.height*dpr)} px panel (${fmt(dpr,2)}× scaling)`+(SCR.flags.size?`, defects flagged on ${[...SCR.flags].join(', ')}`:', no defects flagged');}
@@ -891,22 +906,50 @@ async function scrOpen(){
   try{if(!document.fullscreenElement)await $('scr').requestFullscreen({navigationUI:'hide'});}catch(e){}
   if(SCR.on&&!SCR.end)scrDraw(); // redraw at fullscreen size
 }
-function scrClose(){if(!SCR.on)return;SCR.on=false;SCR.end=false;clearTimeout(SCR.hintT);$('scr').hidden=true;$('scrEnd').hidden=true;
+function scrClose(){if(!SCR.on)return;tsRecord();$('tsDone').hidden=true;
+  if(PER.scr.info)PER.scr.warn=PER.scr.s==='pass'&&SCR.flags.size?['defects were flagged but the screen was marked Pass']:[];updRep();SCR.on=false;SCR.end=false;clearTimeout(SCR.hintT);$('scr').hidden=true;$('scrEnd').hidden=true;
   if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});}
-function scrMark(v){PER.scr.s=v;PER.scr.info=scrInfo();PER.scr.warn=SCR.flags.size&&v==='pass'?['defects were flagged but the screen was marked Pass']:[];scrClose();updRep();}
 PER.scr={s:null,info:'',warn:[]};PNAME.scr='Screen';
 $('scrBtn').onclick=scrOpen;
-$('scrPass').onclick=()=>scrMark('pass');$('scrFail').onclick=()=>scrMark('fail');
 $('scrAgain').onclick=()=>{SCR.flags.clear();scrGo(0);};$('scrClose').onclick=scrClose;
-$('scr').addEventListener('click',e=>{if(!SCR.end)scrGo(SCR.i+1);});
-$('scr').addEventListener('contextmenu',e=>{e.preventDefault();if(!SCR.end)scrGo(SCR.i-1);});
+$('scr').addEventListener('click',e=>{if(SCR.end||e.target.id==='tsDone')return;if(tsStep()&&TS.lastPT!=='mouse')return;scrGo(SCR.i+1);});
+$('scr').addEventListener('contextmenu',e=>{e.preventDefault();if(!SCR.end&&!tsStep())scrGo(SCR.i-1);});
+/* touchscreen grid */
+const TS={cols:0,rows:0,cells:new Uint8Array(0),last:new Map(),active:new Set(),max:0,used:false,done:false,idleT:0,lastPT:'mouse'};
+const tsStep=()=>SCR.on&&!SCR.end&&SCRP[SCR.i][3]==='touch';
+function tsCell(i){const c=scrCv.getContext('2d'),cw=scrCv.width/TS.cols,ch=scrCv.height/TS.rows,q=i%TS.cols,r=(i/TS.cols)|0;c.fillStyle=TS.cells[i]?'#1e7a46':'#1a1d24';c.fillRect(q*cw+1,r*ch+1,cw-2,ch-2);}
+function tsInit(){const c=scrCv.getContext('2d');TS.cols=Math.max(8,Math.round(innerWidth/64));TS.rows=Math.max(5,Math.round(innerHeight/64));
+  TS.cells=new Uint8Array(TS.cols*TS.rows);TS.last.clear();TS.active.clear();TS.max=0;TS.used=false;TS.done=false;clearTimeout(TS.idleT);
+  c.fillStyle='#000';c.fillRect(0,0,scrCv.width,scrCv.height);for(let i=0;i<TS.cells.length;i++)tsCell(i);}
+function tsHit(){let n=0;for(const v of TS.cells)n+=v;return n;}
+function tsMark(e){const dpr=devicePixelRatio||1,x=e.clientX*dpr,y=e.clientY*dpr,c=scrCv.getContext('2d');
+  const q=Math.min(TS.cols-1,Math.max(0,Math.floor(x/(scrCv.width/TS.cols)))),r=Math.min(TS.rows-1,Math.max(0,Math.floor(y/(scrCv.height/TS.rows)))),i=r*TS.cols+q;
+  if(!TS.cells[i]){TS.cells[i]=1;tsCell(i);}
+  const lp=TS.last.get(e.pointerId);c.strokeStyle=`hsl(${(e.pointerId*67)%360} 90% 65%)`;c.fillStyle=c.strokeStyle;c.lineWidth=3*dpr;c.lineCap='round';
+  if(lp){c.beginPath();c.moveTo(lp[0],lp[1]);c.lineTo(x,y);c.stroke();}else{c.beginPath();c.arc(x,y,4*dpr,0,Math.PI*2);c.fill();}
+  TS.last.set(e.pointerId,[x,y]);
+  if(!TS.done&&tsHit()===TS.cells.length){TS.done=true;$('scrHint').innerHTML='<b>All squares registered ✓</b>';scrHint();setTimeout(()=>{if(tsStep())scrGo(SCR.i+1);},1500);}}
+function tsShowDone(){ // put the Done button over an already-covered square nearest the centre
+  if(!tsStep()||TS.active.size||!TS.used)return;let best=-1,bd=1e9;const cx=(TS.cols-1)/2,cy=(TS.rows-1)/2;
+  TS.cells.forEach((v,i)=>{if(!v)return;const d=(i%TS.cols-cx)**2+(((i/TS.cols)|0)-cy)**2;if(d<bd){bd=d;best=i;}});if(best<0)return;
+  const b=$('tsDone');b.style.left=((best%TS.cols)+.5)*innerWidth/TS.cols+'px';b.style.top=(((best/TS.cols)|0)+.5)*innerHeight/TS.rows+'px';
+  b.textContent=`Done ✓  (${tsHit()}/${TS.cells.length})`;b.hidden=false;}
+function tsRecord(){if(!tsStep()||!TS.used)return;const hit=tsHit(),tot=TS.cells.length;
+  PER.tscr.info=`${hit}/${tot} squares registered (${Math.round(hit/tot*100)}%), up to ${TS.max} touch point(s) at once`;
+  PER.tscr.warn=hit<tot&&hit/tot>=0.8?[`${tot-hit} square(s) never registered — possible dead zone`]:[];}
+$('scr').addEventListener('pointerdown',e=>{TS.lastPT=e.pointerType;if(!tsStep()||e.pointerType==='mouse'||e.target.id==='tsDone')return;e.preventDefault();
+  TS.used=true;TS.active.add(e.pointerId);TS.max=Math.max(TS.max,TS.active.size);clearTimeout(TS.idleT);$('tsDone').hidden=true;$('scrHint').classList.add('hide');tsMark(e);});
+$('scr').addEventListener('pointermove',e=>{if(!tsStep()||!TS.active.has(e.pointerId))return;(e.getCoalescedEvents&&e.getCoalescedEvents().length?e.getCoalescedEvents():[e]).forEach(tsMark);});
+['pointerup','pointercancel'].forEach(t=>$('scr').addEventListener(t,e=>{if(!TS.active.delete(e.pointerId))return;TS.last.delete(e.pointerId);
+  if(!TS.active.size){clearTimeout(TS.idleT);TS.idleT=setTimeout(tsShowDone,1200);}}));
+$('tsDone').addEventListener('click',e=>{e.stopPropagation();scrGo(SCR.i+1);});
 $('scr').addEventListener('mousemove',()=>{if(!SCR.end)scrHint();});
 document.addEventListener('keydown',e=>{if(!SCR.on)return;e.stopImmediatePropagation();
   if(e.key==='Escape'){e.preventDefault();scrClose();return;}
   if(SCR.end)return;e.preventDefault();
   if(e.key==='ArrowRight'||e.key===' '||e.key==='Enter'||e.key==='PageDown')scrGo(SCR.i+1);
   else if(e.key==='ArrowLeft'||e.key==='Backspace'||e.key==='PageUp')scrGo(SCR.i-1);
-  else if(e.key==='f'||e.key==='F'){const n=SCRP[SCR.i][0];SCR.flags.has(n)?SCR.flags.delete(n):SCR.flags.add(n);scrDraw();}
+  else if((e.key==='f'||e.key==='F')&&!tsStep()){const n=SCRP[SCR.i][0];SCR.flags.has(n)?SCR.flags.delete(n):SCR.flags.add(n);scrDraw();}
 },true);
 document.addEventListener('fullscreenchange',()=>{if(SCR.on&&!document.fullscreenElement)scrClose();});
 window.addEventListener('resize',()=>{if(SCR.on&&!SCR.end)scrDraw();});
