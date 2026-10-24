@@ -49,8 +49,10 @@ dialog h2{margin:0 0 10px;font-size:18px}
 .verdict{display:flex;align-items:center;gap:14px;padding:10px 14px;border-radius:10px;background:var(--panel2);margin-bottom:10px}
 .verdict .score{font:700 30px/1 ui-monospace,Consolas,monospace}
 .badge{font-size:11px;font-weight:700;padding:2px 7px;border-radius:5px;color:#111}
-.badge.ok{background:var(--ok)}.badge.warn{background:var(--warn)}.badge.bad{background:var(--bad);color:#fff}
+.badge.ok{background:var(--ok)}.badge.na,.badge.und{background:var(--idle);color:#fff}.badge.warn{background:var(--warn)}.badge.bad{background:var(--bad);color:#fff}
 .rgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.rgrid .rc:last-child:nth-child(3n+1):not(:first-child){grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr;column-gap:24px;align-content:start}
+.rgrid .rc:last-child:nth-child(3n+1) h3{grid-column:1/-1}
 .rc{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:9px 11px;font-size:12px}
 .rc h3{margin:0 0 6px;font-size:14px;display:flex;align-items:center;gap:8px}
 .rc h3 .sc{margin-left:auto;color:var(--dim);font-weight:500}
@@ -59,6 +61,8 @@ dialog h2{margin:0 0 10px;font-size:18px}
 .rc ul{margin:0;padding-left:16px}
 .rc li{margin:2px 0}
 .rc li.ok::marker{color:var(--ok)}.rc li.warn::marker{color:var(--warn)}.rc li.bad::marker{color:var(--bad)}.rc li.info::marker{color:var(--dim)}
+.pst{font-size:11px;font-weight:700;color:var(--dim);align-self:center;margin-right:4px;text-transform:uppercase;letter-spacing:.3px}
+.pst.pass{color:var(--ok)}.pst.fail{color:var(--bad)}.pst.und{color:var(--warn)}
 .notes{font-size:12px;color:var(--dim);margin-top:8px}
 #perDlg{width:97vw;height:95vh;max-width:none;max-height:none;padding:12px;overflow:hidden}
 #perDlg[open]{display:flex;flex-direction:column;gap:8px}
@@ -82,6 +86,15 @@ dialog h2{margin:0 0 10px;font-size:18px}
 .k.down{background:var(--accent);color:#fff;border-color:var(--accent)}
 #touchCv{flex:1;min-height:0;width:100%;touch-action:none;background:var(--panel);border-radius:6px;cursor:crosshair;display:block}
 @media (max-width:900px){.pgrid{grid-template-columns:1fr 1fr;grid-template-rows:repeat(3,minmax(0,1fr))}}
+#scr{position:fixed;inset:0;z-index:9999;background:#000;cursor:none;overflow:hidden}
+#scr[hidden],#scrEnd[hidden]{display:none}
+#scr.cur{cursor:default}
+#scrCv{position:absolute;left:0;top:0;display:block}
+#scrHint{position:absolute;left:50%;bottom:24px;transform:translateX(-50%);max-width:94vw;background:rgba(20,22,28,.88);color:#fff;padding:8px 14px;border-radius:8px;font-size:13px;text-align:center;transition:opacity .4s;pointer-events:none}
+#scrHint.hide{opacity:0}
+#scrHint b{color:var(--warn)}
+#scrEnd{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:var(--bg);color:var(--text);cursor:default;padding:16px;text-align:center}
+#scrEnd h2{margin:0}
 @media (max-width:900px){main{grid-template-columns:repeat(2,1fr);grid-template-rows:repeat(3,1fr)}.rgrid{grid-template-columns:repeat(2,1fr)}}
 @media (max-height:620px){.big{font-size:20px}h1{font-size:16px}#elapsed{font-size:18px}}
 </style>
@@ -99,8 +112,9 @@ dialog h2{margin:0 0 10px;font-size:18px}
   </select>
   <button id="startBtn" class="primary">Start test</button>
   <button id="setBtn" title="Settings">⚙ Settings</button>
+  <button id="scrBtn" title="Full-screen test patterns for dead pixels and damage">Screen</button>
   <button id="perBtn" title="Test webcam, microphone, speakers, keyboard and touch">Peripherals</button>
-  <button id="repBtn" disabled>Last report</button>
+  <button id="repBtn" disabled title="Health report for everything tested so far">Report</button>
 </header>
 <div id="hint" class="hint">Tips: close other tabs, keep this tab in front, and test for 10+ minutes so heat builds up. Unplug to measure battery drain; plug in to check the charger.</div>
 
@@ -194,9 +208,19 @@ dialog h2{margin:0 0 10px;font-size:18px}
   </div>
 </dialog>
 
+<div id="scr" hidden>
+  <canvas id="scrCv"></canvas>
+  <div id="scrHint"></div>
+  <div id="scrEnd" hidden>
+    <h2>Screen test complete</h2>
+    <div id="scrSum" class="dim"></div>
+    <div class="prow"><button id="scrPass" class="primary" style="background:var(--ok);border-color:var(--ok);color:#111">Pass</button><button id="scrFail" class="primary stop">Fail</button><button id="scrAgain">Run again</button><button id="scrClose">Close</button></div>
+  </div>
+</div>
+
 <dialog id="repDlg">
   <div id="repBody"></div>
-  <div class="btns"><button id="repCopy">Copy report</button><button id="repSave">Save .txt</button><button id="repClose" class="primary">Close</button></div>
+  <div class="btns"><button id="repCopy">Copy report</button><button id="repPdf">Save PDF</button><button id="repPng">Save PNG</button><button id="repSave">Save .txt</button><button id="repClose" class="primary">Close</button></div>
 </dialog>
 
 <script>
@@ -399,6 +423,11 @@ window.addEventListener('offline',()=>{if(S&&S.running)S.net.offline++;});
 
 /* ---------- run state ---------- */
 let S=null,LAST=null,wakeLock=null;
+/* Report base: the last stress run, or an empty shell so peripheral/screen results can be reported on their own */
+const repBase=()=>LAST||{date:new Date(),dur:0,reason:'none',comps:[],notes:[],graphs:{}};
+const hasResults=()=>!!(LAST||periphComp());
+const runDesc=R=>R.reason==='none'?'Peripheral and screen checks only (no stress test run)':`${fmtTime(R.dur)} test, ended ${R.reason==='timer'?'by timer':'by user'}`;
+function updRep(){$('repBtn').disabled=!!(S&&S.running)||!hasResults();}
 const KEYS=['cpu','gpu','ram','disk','net'];
 function newState(en){const now=performance.now();return{en,running:true,t0:now,last:now,sec:0,hiddenSec:0,dur:0,
   cpu:{workers:[],acc:[],errs:0,crashed:0,hist:[],n:0},
@@ -406,7 +435,7 @@ function newState(en){const now=performance.now();return{en,running:true,t0:now,
   ram:{w:null,target:0,alloc:0,allocErr:null,bytes:0,hist:[],errs:0,pass:0,crashed:0,done:false},
   disk:{w:null,mode:'–',mb:0,passes:[],errs:0,err:null,live:0,phase:'',hist:[],maxW:0,stopped:false},
   net:{provider:null,lat:[],dl:[],ul:[],ok:0,fail:0,offline:0},
-  sys:{b:null,b0:null,jumps:0,chargingAll:true,dischargingAll:true,pState:'n/a',pCount:{},lag:0,lagMax:0,hist:[],po:null,lagId:0}};}
+  sys:{b:null,b0:null,jumps:0,bh:[],chargingAll:true,dischargingAll:true,pState:'n/a',pCount:{},lag:0,lagMax:0,hist:[],po:null,lagId:0}};}
 
 function startCPU(st){
   const n=DEV.threads||4;st.cpu.n=n;st.cpu.acc=new Array(n).fill(0);
@@ -459,7 +488,7 @@ async function stop(reason){
   const b=$('startBtn');b.disabled=true;b.textContent='Finishing…';
   if(st.disk.w){st.disk.w.postMessage({cmd:'stop'});const t=performance.now();while(!st.disk.stopped&&performance.now()-t<4000)await sleep(100);st.disk.w.terminate();}
   setRunningUI(false);
-  LAST=assess(st);applyTileStatus(st,LAST);showReport(LAST);
+  LAST=assess(st);updRep();applyTileStatus(st,LAST);showReport(LAST);
 }
 
 /* ---------- per-second sampling + UI ---------- */
@@ -474,7 +503,7 @@ function tick(st){
   if(st.en.disk){const d=st.disk;d.hist.push(d.phase==='write'?d.live:null);}
   const y=st.sys;if(!hidden)y.lagMax=Math.max(y.lagMax,y.lag);y.hist.push(hidden?null:y.lag);y.lag=0;
   if(y.b){if(y.b.charging)y.dischargingAll=false;else y.chargingAll=false;}
-  y.pCount[y.pState]=(y.pCount[y.pState]||0)+1;
+  y.pCount[y.pState]=(y.pCount[y.pState]||0)+1;y.bh.push(y.b?y.b.level*100:null);
   render(st,el);
   if(st.dur>0&&el>=st.dur)stop('timer');
 }
@@ -514,7 +543,7 @@ function resetTiles(st){
 }
 function setRunningUI(on){
   const b=$('startBtn');b.disabled=false;b.textContent=on?'Stop test':'Start test';b.classList.toggle('stop',on);
-  for(const k of KEYS)$('en-'+k).disabled=on;$('dur').disabled=on;$('setBtn').disabled=on;$('repBtn').disabled=on||!LAST;
+  for(const k of KEYS)$('en-'+k).disabled=on;$('dur').disabled=on;$('setBtn').disabled=on;updRep();
   txt('hint',on?'Testing… keep this tab in front (background tabs get throttled). Press Stop at any time for the health report.':'Tips: close other tabs, keep this tab in front, and test for 10+ minutes so heat builds up. Unplug to measure battery drain; plug in to check the charger.');
 }
 function applyTileStatus(st,rep){
@@ -523,7 +552,8 @@ function applyTileStatus(st,rep){
 }
 
 /* ---------- health assessment ---------- */
-const RANK={ok:0,info:0,warn:1,bad:2},LBL={ok:'PASS',warn:'WARN',bad:'FAIL'};
+const RANK={na:-1,und:-1,ok:0,info:0,warn:1,bad:2},LBL={ok:'PASS',warn:'WARN',bad:'FAIL',na:'NOT TESTED',und:'UNDETERMINED'};
+const scoreTxt=v=>v==null?'–':v;
 const F=(l,t)=>({l,t});
 function phase(h){
   const a=valid(h);if(a.length<20)return null;
@@ -566,7 +596,7 @@ function assess(st){
     if(r.crashed)f.push(F('bad','Memory test worker crashed (possibly ran out of memory).'));
     if(r.errs)f.push(F('bad',`${r.errs} memory verification error(s) — data changed after being written. Strong sign of faulty RAM.`));
     else if(r.pass>0)f.push(F('ok',`${r.pass} write/verify pass(es) over ${fmt(r.alloc)} MB with no errors.`));
-    else f.push(F('warn','No complete memory pass finished — run the test longer.'));
+    else f.push(F(dur<60?'info':'warn','No complete memory pass finished — run the test longer.'));
     if(r.allocErr||(r.done&&r.alloc<r.target))f.push(F('warn',`Only ${fmt(r.alloc)} of ${fmt(r.target)} MB could be allocated — low free memory or a browser limit.`));
     if(ps&&ps.ratio<0.6)f.push(F('warn',`Memory bandwidth fell to ${Math.round(ps.ratio*100)}% of initial — thermal throttling.`));
     R.comps.push(comp('ram','RAM',[['Tested',fmt(r.alloc)+' MB'],['Target',fmt(r.target)+' MB'],['Bandwidth',ps?fmt(ps.mean,0)+' MB/s':'–'],['Passes',r.pass],['Errors',r.errs]],f));}
@@ -591,7 +621,7 @@ function assess(st){
     }
     R.comps.push(comp('net','Network',[['Server',n.provider||'–'],['Median latency',fmt(ml,0)+' ms'],['Jitter',fmt(jit,0)+' ms'],['Failed',fmt(loss,1)+'%'],['Avg down',n.dl.length?fmt(avg(n.dl),1)+' Mbps':'–'],['Avg up',n.ul.length?fmt(avg(n.ul),1)+' Mbps':'–'],['Drops',n.offline]],f));}
   {const y=st.sys,f=[],m=[];
-    if(y.b&&y.b0){const b=y.b,l0=y.b0.level*100,l1=b.level*100,hrs=dur/3600;
+    if(y.b&&y.b0){const m=[],f=[],b=y.b,l0=y.b0.level*100,l1=b.level*100,hrs=dur/3600;
       m.push(['Level',`${fmt(l0)}% → ${fmt(l1)}%`]);
       m.push(['Power',y.dischargingAll?'on battery':y.chargingAll?'plugged in':'changed during test']);
       if(y.dischargingAll){
@@ -608,21 +638,32 @@ function assess(st){
       f.push(F('info',battTip()));
       R.comps.push(comp('batt','Battery',m,f));
     }
+    // Thermal pressure and UI responsiveness describe CPU load, so they join the CPU card.
     if(y.po){const tot=Object.values(y.pCount).reduce((a,b)=>a+b,0)||1,cr=(y.pCount.critical||0)/tot,se=(y.pCount.serious||0)/tot;
-      m.push(['Thermal',`serious ${Math.round(se*100)}%, critical ${Math.round(cr*100)}%`]);
-      if(cr>0.1)f.push(F('warn',`Chrome reported CRITICAL system pressure ${Math.round(cr*100)}% of the time — the device hit its thermal/power limit.`));}
-    else m.push(['Thermal','not reported']);
+      m.push(['Thermal pressure',`serious ${Math.round(se*100)}%, critical ${Math.round(cr*100)}%`]);
+      if(cr>0.1)f.push(F('warn',`Chrome reported CRITICAL thermal/power pressure ${Math.round(cr*100)}% of the time — the device hit its limit.`));}
     m.push(['Max UI freeze',fmt(y.lagMax,0)+' ms']);
     if(y.lagMax>2000)f.push(F('warn',`The page froze for up to ${fmt(y.lagMax/1000,1)} s — the system is struggling (possibly swapping memory).`));
-    const hp=st.sec?st.hiddenSec/st.sec:0;m.push(['In background',Math.round(hp*100)+'%']);
-    if(hp>0.1)f.push(F('info',`Tab was in the background ${Math.round(hp*100)}% of the test; GPU and timing results are less reliable.`));
-    R.comps.push(comp('sys','System',m,f));}
+    const ci=R.comps.findIndex(c=>c.key==='cpu');
+    if(ci>=0){const c=R.comps[ci];R.comps[ci]=comp('cpu','CPU',[...c.metrics,...m],[...c.findings,...f]);}
+    else if(f.length)R.comps.push(comp('sys','System',m,f));
+    const hp=st.sec?st.hiddenSec/st.sec:0;
+    if(hp>0.1)R.notes.push(`The tab was in the background ${Math.round(hp*100)}% of the test, so GPU and timing results are less reliable.`);}
+  R.skipped=KEYS.filter(k=>!st.en[k]).map(k=>({cpu:'CPU',gpu:'GPU',ram:'RAM',disk:'Storage',net:'Network'})[k]);
+  R.graphs={};const GR=(k,d,label,col,ref)=>{R.graphs[k]={d,label,col,ref};};
+  if(st.en.cpu)GR('cpu',st.cpu.hist,'CPU throughput over time (Mops/s)','#2f6fdf',base(st.cpu.hist));
+  if(st.en.gpu)GR('gpu',st.gpu.hist,'Frame rate over time (FPS)','#8b4fe0',base(st.gpu.hist));
+  if(st.en.ram)GR('ram',st.ram.hist,'Memory bandwidth over time (MB/s)','#1e9e57');
+  if(st.en.disk)GR('disk',st.disk.passes.length>=2?st.disk.passes.map(p=>p.w):st.disk.hist,st.disk.passes.length>=2?'Write speed per pass (MB/s)':'Write speed (MB/s)','#c98a00');
+  if(st.en.net)GR('net',st.net.lat,'Latency per request (ms)','#13a3a3');
+  if(st.sys.b)GR('batt',st.sys.bh,'Battery level over time (%)','#e07b2f');
+  GR('sys',st.sys.hist,'UI responsiveness lag (ms, lower is better)','#ff5a36');
   if(dur<120)R.notes.push('Short test — run 10+ minutes for reliable throttling and stability results.');
   R.notes.push('Throttling is relative to this unit’s own first minute. Fanless laptops and Chromebooks throttle more by design, so compare against a known-good unit of the same model.');
   if(st.en.disk)R.notes.push('*Storage reads may be served from cache and look faster than the drive really is.');
   return R;
 }
-const VERDICT={ok:'Healthy — no problems detected.',warn:'Some concerns — review the warnings below.',bad:'Problems detected — see the failures below.'};
+const VERDICT={ok:'Healthy — no problems detected.',warn:'Some concerns — review the warnings below.',bad:'Problems detected — see the failures below.',na:'Nothing has been tested yet.',und:'Not yet judged — mark the checked items Pass or Fail.'};
 function battTip(){
   const ua=navigator.userAgent,where=/CrOS/.test(ua)?'On ChromeOS, open the Diagnostics app (chrome://diagnostics) for battery health % and cycle count.'
     :/Windows/.test(ua)?'On Windows, run "powercfg /batteryreport" and compare Full Charge Capacity to Design Capacity.'
@@ -632,23 +673,25 @@ function battTip(){
 }
 function summarize(R){ // stress results + any peripheral results
   const comps=R?[...R.comps]:[],pc=periphComp();if(pc)comps.push(pc);
-  const tested=comps.filter(c=>c.key!=='sys'||c.findings.some(f=>f.l!=='info'));
-  return{comps,lvl:comps.reduce((m,c)=>RANK[c.lvl]>RANK[m]?c.lvl:m,'ok'),score:Math.round(avg(tested.map(c=>c.score)))};
+  const tested=comps.filter(c=>c.score!=null&&(c.key!=='sys'||c.findings.some(f=>f.l!=='info')));
+  const lvl=tested.length?comps.reduce((m,c)=>RANK[c.lvl]>RANK[m]?c.lvl:m,'ok'):(comps.some(c=>c.lvl==='und')?'und':'na');
+  return{comps,lvl,score:tested.length?Math.round(avg(tested.map(c=>c.score))):null,skipped:(R&&R.skipped)||[]};
 }
 function showReport(R0){
   const R=Object.assign({},R0,summarize(R0));
   const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-  let h=`<div class="verdict"><div class="score">${R.score}</div><div><span class="badge ${R.lvl}">${LBL[R.lvl]}</span> <b>${VERDICT[R.lvl]}</b><div class="dim">${fmtTime(R.dur)} test, ended ${R.reason==='timer'?'by timer':'by user'} · ${R.date.toLocaleString()}</div></div></div><div class="rgrid">`;
-  for(const c of R.comps){h+=`<div class="rc"><h3>${c.name} <span class="badge ${c.lvl}">${LBL[c.lvl]}</span><span class="sc">${c.score}/100</span></h3><table>${c.metrics.map(([k,v])=>`<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('')}</table><ul>${c.findings.map(f=>`<li class="${f.l}">${esc(f.t)}</li>`).join('')}</ul></div>`;}
-  h+=`</div><div class="notes">${R.notes.map(esc).join('<br>')}</div>`;
+  let h=`<div class="verdict"><div class="score">${scoreTxt(R.score)}</div><div><span class="badge ${R.lvl}">${LBL[R.lvl]}</span> <b>${VERDICT[R.lvl]}</b><div class="dim">${runDesc(R)} · ${R.date.toLocaleString()}</div></div></div><div class="rgrid">`;
+  for(const c of R.comps){h+=`<div class="rc"><h3>${c.name} <span class="badge ${c.lvl}">${LBL[c.lvl]}</span><span class="sc">${c.score==null?'':c.score+'/100'}</span></h3><table>${c.metrics.map(([k,v])=>`<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('')}</table><ul>${c.findings.map(f=>`<li class="${f.l}">${esc(f.t)}</li>`).join('')}</ul></div>`;}
+  h+=`</div>`;if(R.skipped.length)h+=`<div class="notes"><b>Not tested:</b> ${esc(R.skipped.join(', '))} (switched off for this run, not counted against the score).</div>`;
+  h+=`<div class="notes">${R.notes.map(esc).join('<br>')}</div>`;
   $('repBody').innerHTML=h;$('repDlg').showModal();
 }
 function reportText(R0){
   const R=Object.assign({},R0,summarize(R0));
-  const L=['WEB STRESS TEST REPORT',`Date: ${R.date.toLocaleString()}`,`Duration: ${fmtTime(R.dur)} (ended ${R.reason==='timer'?'by timer':'by user'})`,
+  const L=['WEB STRESS TEST REPORT',`Date: ${R.date.toLocaleString()}`,`Test: ${runDesc(R)}`,
     `Device: ${DEV.os}, ${DEV.threads} threads, ${DEV.mem?(DEV.mem>=8?'8+':DEV.mem)+' GB':'?'} RAM, GPU: ${DEV.gpu}`,`Browser: ${DEV.ua}`,'',
-    `OVERALL: ${LBL[R.lvl]} (${R.score}/100) - ${VERDICT[R.lvl]}`,''];
-  for(const c of R.comps){L.push(`[${c.name}] ${LBL[c.lvl]} ${c.score}/100`);c.metrics.forEach(([k,v])=>L.push(`  ${k}: ${v}`));c.findings.forEach(f=>L.push(`  - (${f.l}) ${f.t}`));L.push('');}
+    `OVERALL: ${LBL[R.lvl]}${R.score==null?'':' ('+R.score+'/100)'} - ${VERDICT[R.lvl]}`,...(R.skipped.length?[`Not tested: ${R.skipped.join(', ')} (switched off; not counted)`]:[]),''];
+  for(const c of R.comps){L.push(`[${c.name}] ${LBL[c.lvl]}${c.score==null?'':' '+c.score+'/100'}`);c.metrics.forEach(([k,v])=>L.push(`  ${k}: ${v}`));c.findings.forEach(f=>L.push(`  - (${f.l}) ${f.t}`));L.push('');}
   R.notes.forEach(n=>L.push('Note: '+n));return L.join('\n');
 }
 
@@ -656,16 +699,27 @@ function reportText(R0){
 const escH=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const PER={cam:{s:null,info:'',warn:[]},mic:{s:null,info:'',warn:[]},spk:{s:null,info:'',warn:[]},keys:{s:null,info:'',warn:[]},touch:{s:null,info:'',warn:[]}};
 const PNAME={cam:'Webcam',mic:'Microphone',spk:'Speakers',keys:'Keyboard',touch:'Trackpad/touch'};
-document.querySelectorAll('.pf').forEach(el=>{const k=el.dataset.k;el.innerHTML='<button class="pass">Pass</button><button class="fail">Fail</button>';
-  el.querySelectorAll('button').forEach(b=>b.onclick=()=>{const v=b.classList.contains('pass')?'pass':'fail';PER[k].s=PER[k].s===v?null:v;el.querySelectorAll('button').forEach(x=>x.classList.toggle('on',!!PER[k].s&&x.classList.contains(PER[k].s)));});});
+const PITEMS=['cam','mic','spk','keys','touch','scr'];
+const pState=k=>{const p=PER[k];return!p?'na':p.s||(p.info||p.warn.length?'und':'na');};
+const PSTXT={pass:'Pass',fail:'Fail',und:'Undetermined',na:'Not tested'};
+function pfRefresh(){document.querySelectorAll('.pf').forEach(el=>{const st=pState(el.dataset.k),t=el.querySelector('.pst');t.textContent=PSTXT[st];t.className='pst '+st;});}
+document.querySelectorAll('.pf').forEach(el=>{const k=el.dataset.k;el.innerHTML='<span class="pst"></span><button class="pass" title="Click again to clear">Pass</button><button class="fail" title="Click again to clear">Fail</button>';
+  el.querySelectorAll('button').forEach(b=>b.onclick=()=>{const v=b.classList.contains('pass')?'pass':'fail';PER[k].s=PER[k].s===v?null:v;el.querySelectorAll('button').forEach(x=>x.classList.toggle('on',!!PER[k].s&&x.classList.contains(PER[k].s)));pfRefresh();updRep();});});
+setInterval(()=>{if($('perDlg').open)pfRefresh();},1000);
 function periphComp(){
-  const ks=Object.keys(PER).filter(k=>PER[k].s||PER[k].info);if(!ks.length)return null;
-  const m=[],f=[];
-  for(const k of ks){const p=PER[k];m.push([PNAME[k],p.s?p.s.toUpperCase():'not marked']);
-    if(p.s==='fail')f.push(F('bad',`${PNAME[k]} marked as failed${p.info?' ('+p.info+')':''}.`));
-    else if(p.info)f.push(F(p.s==='pass'?'ok':'info',`${PNAME[k]}: ${p.info}`));
+  const ks=PITEMS.filter(k=>PER[k]),st=Object.fromEntries(ks.map(k=>[k,pState(k)]));
+  if(ks.every(k=>st[k]==='na'))return null;
+  const m=[],f=[],nt=[];
+  for(const k of ks){const p=PER[k];m.push([PNAME[k],LBL[st[k]==='pass'?'ok':st[k]==='fail'?'bad':st[k]]]);
+    if(st[k]==='fail')f.push(F('bad',`${PNAME[k]} marked as failed${p.info?' ('+p.info+')':''}.`));
+    else if(st[k]==='pass'&&p.info)f.push(F('ok',`${PNAME[k]}: ${p.info}`));
+    else if(st[k]==='und')f.push(F('info',`${PNAME[k]} was checked but not marked Pass or Fail${p.info?' ('+p.info+')':''}.`));
+    else if(st[k]==='na')nt.push(PNAME[k]);
     for(const w of p.warn)f.push(F('warn',`${PNAME[k]}: ${w}`));}
-  return comp('per','Peripherals',m,f);
+  if(nt.length)f.push(F('info',`Not tested: ${nt.join(', ')} — not counted against the score.`));
+  const c=comp('per','Peripherals',m,f);
+  if(!ks.some(k=>st[k]==='pass'||st[k]==='fail')&&!f.some(x=>x.l==='warn'||x.l==='bad')){c.lvl=ks.some(k=>st[k]==='und')?'und':'na';c.score=null;}
+  return c;
 }
 function periphText(){const c=periphComp();if(!c)return'No peripheral results yet.';
   return['PERIPHERAL TEST',`Date: ${new Date().toLocaleString()}`,`Device: ${DEV.os}`,'',...c.metrics.map(([k,v])=>`${k}: ${v}`),'',...c.findings.map(f=>`- (${f.l}) ${f.t}`)].join('\n');}
@@ -764,7 +818,7 @@ function buildKB(){if(kbBuilt)return;kbBuilt=true;$('kb').innerHTML=KB.map(r=>'<
 function keyStatus(){const tot=KB.flat().length,hit=[...keyHit].filter(c=>document.querySelector(`.k[data-c="${c}"]`)).length;
   txt('keyInfo',`${hit} of ${tot} keys pressed`);txt('keyExtra','Other keys detected: '+(keyExtra.size?[...keyExtra].join(', '):'none')+'  ·  Keys this layout doesn’t have (or the OS reserves) can be ignored.');
   PER.keys.info=`${hit} of ${tot} layout keys pressed`+(keyExtra.size?`, plus ${keyExtra.size} other`:'');}
-document.addEventListener('keydown',e=>{if(!$('perDlg').open)return;const tg=e.target.tagName;if(tg==='SELECT'||(tg==='INPUT'&&e.target.type!=='range'))return;
+document.addEventListener('keydown',e=>{if(!$('perDlg').open||SCR.on)return;const tg=e.target.tagName;if(tg==='SELECT'||(tg==='INPUT'&&e.target.type!=='range'))return;
   e.preventDefault();const code=e.code||e.key,el=document.querySelector(`.k[data-c="${code}"]`);keyHit.add(code);
   if(el)el.classList.add('hit','down');else keyExtra.add(code||'Unidentified');keyStatus();},true);
 document.addEventListener('keyup',e=>{if(!$('perDlg').open)return;const el=document.querySelector(`.k[data-c="${e.code||e.key}"]`);if(el)el.classList.remove('down');
@@ -793,18 +847,203 @@ $('touchReset').onclick=()=>{TG.cells.fill(0);TG.trail=[];TG.maxTouch=0;TG.butto
 window.addEventListener('resize',()=>{if($('perDlg').open)touchQueue();});
 /* overlay */
 async function copyText(t,btn,label){try{await navigator.clipboard.writeText(t);}catch(e){const a=document.createElement('textarea');a.value=t;document.body.appendChild(a);a.select();document.execCommand('copy');a.remove();}btn.textContent='Copied ✓';setTimeout(()=>btn.textContent=label,1500);}
-$('perBtn').onclick=()=>{buildKB();$('perDlg').showModal();touchQueue();if(navigator.mediaDevices){listDevs('videoinput',$('camSel'));listDevs('audioinput',$('micSel'));}};
+$('perBtn').onclick=()=>{buildKB();pfRefresh();$('perDlg').showModal();touchQueue();if(navigator.mediaDevices){listDevs('videoinput',$('camSel'));listDevs('audioinput',$('micSel'));}};
 $('perDlg').addEventListener('cancel',e=>e.preventDefault()); // Esc is a key under test, not "close"
-$('perDlg').addEventListener('close',()=>{camStop();micStop();spkStop();});
+$('perDlg').addEventListener('close',()=>{camStop();micStop();spkStop();updRep();});
 $('perClose').onclick=()=>$('perDlg').close();
 $('perCopy').onclick=()=>copyText(periphText(),$('perCopy'),'Copy results');
 
+/* ---------- screen test ---------- */
+const scrCv=$('scrCv');
+function scrFill(c,col){c.fillStyle=col;c.fillRect(0,0,scrCv.width,scrCv.height);}
+function scrLines(c,vert){const W=scrCv.width,H=scrCv.height,img=c.createImageData(W,H),u=new Uint32Array(img.data.buffer),WH=0xFFFFFFFF,BK=0xFF000000;
+  for(let y=0;y<H;y++){const o=y*W;if(vert){for(let x=0;x<W;x++)u[o+x]=x&1?BK:WH;}else u.fill(y&1?BK:WH,o,o+W);}c.putImageData(img,0,0);}
+function scrGrad(c){const W=scrCv.width,H=scrCv.height,band=[['#fff',0,H/2],['#f00',H/2,H/6],['#0f0',H*2/3,H/6],['#00f',H*5/6,H/6]];
+  for(const[col,y,h]of band){const g=c.createLinearGradient(0,0,W,0);g.addColorStop(0,'#000');g.addColorStop(1,col);c.fillStyle=g;c.fillRect(0,Math.floor(y),W,Math.ceil(h));}}
+const SCRP=[
+  ['White','Look for dark spots, dead pixels, yellow/blue tints, and dust under the panel.',c=>scrFill(c,'#fff')],
+  ['Black','Look for stuck bright pixels and light bleeding in at the edges (best in a dim room).',c=>scrFill(c,'#000')],
+  ['Red','Stuck or dead sub-pixels show as dots of the wrong color.',c=>scrFill(c,'#f00')],
+  ['Green','Stuck or dead sub-pixels show as dots of the wrong color.',c=>scrFill(c,'#0f0')],
+  ['Blue','Stuck or dead sub-pixels show as dots of the wrong color.',c=>scrFill(c,'#00f')],
+  ['Vertical lines','Alternating 1-pixel columns: should look like even, steady gray. Look for bands, flicker or lines that stand out.',c=>scrLines(c,true)],
+  ['Horizontal lines','Alternating 1-pixel rows: should look like even, steady gray. Look for bands, flicker or lines that stand out.',c=>scrLines(c,false)],
+  ['50% gray','Best for impact damage: look for cracks, pressure marks, blotches and uneven brightness.',c=>scrFill(c,'#808080')],
+  ['Gradients','Ramps should be smooth: look for stepped bands, tints, or one side brighter than the other.',c=>scrGrad(c)],
+];
+const SCR={on:false,end:false,i:0,flags:new Set(),hintT:0};
+function scrSize(){const dpr=devicePixelRatio||1,w=innerWidth,h=innerHeight;scrCv.width=Math.round(w*dpr);scrCv.height=Math.round(h*dpr);scrCv.style.width=w+'px';scrCv.style.height=h+'px';}
+function scrHint(){const h=$('scrHint');h.classList.remove('hide');$('scr').classList.add('cur');clearTimeout(SCR.hintT);
+  SCR.hintT=setTimeout(()=>{h.classList.add('hide');$('scr').classList.remove('cur');},3000);}
+function scrDraw(){
+  if(SCR.end)return;scrSize();const[name,tip,fn]=SCRP[SCR.i];fn(scrCv.getContext('2d'));
+  $('scrHint').innerHTML=`<b>${SCR.i+1}/${SCRP.length} · ${name}</b>${SCR.flags.has(name)?' · <b>⚑ defect flagged</b>':''}<br>${tip}<br><span style="opacity:.75">Click or → next · ← or right-click back · F flag a defect · Esc exit</span>`;scrHint();}
+function scrGo(i){
+  if(i<0)i=0;
+  if(i>=SCRP.length){SCR.end=true;const f=[...SCR.flags];
+    $('scrSum').innerHTML=(f.length?'Defects flagged on: <b>'+escH(f.join(', '))+'</b>':'No defects flagged.')+'<br>Mark the screen as Pass or Fail to add it to the report.';
+    if(!PER.scr.s)PER.scr.info=scrInfo();updRep();
+    $('scrEnd').hidden=false;$('scr').classList.add('cur');clearTimeout(SCR.hintT);$('scrHint').classList.add('hide');return;}
+  SCR.end=false;$('scrEnd').hidden=true;SCR.i=i;scrDraw();}
+function scrInfo(){const dpr=devicePixelRatio||1;return`${Math.round(screen.width*dpr)}×${Math.round(screen.height*dpr)} px panel (${fmt(dpr,2)}× scaling)`+(SCR.flags.size?`, defects flagged on ${[...SCR.flags].join(', ')}`:', no defects flagged');}
+async function scrOpen(){
+  SCR.on=true;SCR.flags.clear();$('scr').hidden=false;scrGo(0);
+  try{if(!document.fullscreenElement)await $('scr').requestFullscreen({navigationUI:'hide'});}catch(e){}
+  if(SCR.on&&!SCR.end)scrDraw(); // redraw at fullscreen size
+}
+function scrClose(){if(!SCR.on)return;SCR.on=false;SCR.end=false;clearTimeout(SCR.hintT);$('scr').hidden=true;$('scrEnd').hidden=true;
+  if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});}
+function scrMark(v){PER.scr.s=v;PER.scr.info=scrInfo();PER.scr.warn=SCR.flags.size&&v==='pass'?['defects were flagged but the screen was marked Pass']:[];scrClose();updRep();}
+PER.scr={s:null,info:'',warn:[]};PNAME.scr='Screen';
+$('scrBtn').onclick=scrOpen;
+$('scrPass').onclick=()=>scrMark('pass');$('scrFail').onclick=()=>scrMark('fail');
+$('scrAgain').onclick=()=>{SCR.flags.clear();scrGo(0);};$('scrClose').onclick=scrClose;
+$('scr').addEventListener('click',e=>{if(!SCR.end)scrGo(SCR.i+1);});
+$('scr').addEventListener('contextmenu',e=>{e.preventDefault();if(!SCR.end)scrGo(SCR.i-1);});
+$('scr').addEventListener('mousemove',()=>{if(!SCR.end)scrHint();});
+document.addEventListener('keydown',e=>{if(!SCR.on)return;e.stopImmediatePropagation();
+  if(e.key==='Escape'){e.preventDefault();scrClose();return;}
+  if(SCR.end)return;e.preventDefault();
+  if(e.key==='ArrowRight'||e.key===' '||e.key==='Enter'||e.key==='PageDown')scrGo(SCR.i+1);
+  else if(e.key==='ArrowLeft'||e.key==='Backspace'||e.key==='PageUp')scrGo(SCR.i-1);
+  else if(e.key==='f'||e.key==='F'){const n=SCRP[SCR.i][0];SCR.flags.has(n)?SCR.flags.delete(n):SCR.flags.add(n);scrDraw();}
+},true);
+document.addEventListener('fullscreenchange',()=>{if(SCR.on&&!document.fullscreenElement)scrClose();});
+window.addEventListener('resize',()=>{if(SCR.on&&!SCR.end)scrDraw();});
+
+/* ---------- visual report (PNG / PDF) ---------- */
+const RC={bg:'#ffffff',text:'#1b1f27',dim:'#667085',line:'#e3e6ec',card:'#f7f8fa',ok:'#1e9e57',warn:'#c98a00',bad:'#d93636',info:'#98a2b3',na:'#98a2b3',und:'#8a94a6',accent:'#2f6fdf'};
+const RFONT='system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif',fnt=(z,w=400)=>`${w} ${z}px ${RFONT}`;
+const RP={W:1700,M:80,G:28};
+function rr(c,x,y,w,h,r){c.beginPath();c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath();}
+function wrapText(c,t,maxW){const out=[];for(const para of String(t).split('\n')){let cur='';for(const w of para.split(/\s+/)){const tr=cur?cur+' '+w:w;if(cur&&c.measureText(tr).width>maxW){out.push(cur);cur=w;}else cur=tr;}out.push(cur);}return out;}
+function fitText(c,t,maxW){t=String(t);if(c.measureText(t).width<=maxW)return t;while(t.length>1&&c.measureText(t+'…').width>maxW)t=t.slice(0,-1);return t+'…';}
+function badge(c,xr,y,lvl,label,sz=20){c.font=fnt(sz,700);const h=Math.round(sz*1.6),tw=c.measureText(label).width+sz*1.2,bx=xr-tw;rr(c,bx,y,tw,h,7);c.fillStyle=RC[lvl];c.fill();
+  c.fillStyle=lvl==='warn'?'#1b1f27':'#fff';c.textBaseline='middle';c.fillText(label,bx+sz*0.6,y+h/2+1);c.textBaseline='top';}
+function ds(a,n){if(a.length<=n)return a;const out=[],k=a.length/n;for(let i=0;i<n;i++){const v=valid(a.slice(Math.floor(i*k),Math.floor((i+1)*k)));out.push(v.length?avg(v):null);}return out;}
+/* K = sizing for card layout (compact when 3 columns) */
+const KS={2:{P:26,tf:28,th:44,bs:20,bar:28,gl:17,gh:96,gx:16,mf:20,mr:28,ff:20,fl:27},3:{P:20,tf:24,th:38,bs:17,bar:22,gl:15,gh:72,gx:14,mf:17.5,mr:24,ff:17.5,fl:23}};
+function drawGraph(c,g,x,y,w,dur,K){
+  const v0=valid(g.d),peak=Math.max(...v0);c.textBaseline='top';c.font=fnt(K.gl,600);c.fillStyle=RC.dim;
+  c.fillText(fitText(c,`${g.label} · peak ${fmt(peak,peak<10?1:0)}${g.ref?' · dashed = initial':''}`,w),x,y);
+  const py=y+K.gl+8,ph=K.gh;rr(c,x,py,w,ph,8);c.fillStyle='#fff';c.fill();c.strokeStyle=RC.line;c.lineWidth=1.5;c.stroke();
+  const d=ds(g.d,Math.floor(w/4)),max=Math.max(peak,g.ref||0)*1.15||1,n=d.length,X=i=>x+6+(n>1?i/(n-1):0)*(w-12),Y=v=>py+ph-6-(v/max)*(ph-14);
+  c.save();rr(c,x,py,w,ph,8);c.clip();
+  let seg=[];const flush=()=>{if(seg.length>1){c.beginPath();c.moveTo(X(seg[0][0]),py+ph);seg.forEach(([i,v])=>c.lineTo(X(i),Y(v)));c.lineTo(X(seg[seg.length-1][0]),py+ph);c.closePath();c.globalAlpha=.13;c.fillStyle=g.col;c.fill();c.globalAlpha=1;
+    c.beginPath();seg.forEach(([i,v],j)=>j?c.lineTo(X(i),Y(v)):c.moveTo(X(i),Y(v)));c.strokeStyle=g.col;c.lineWidth=2.5;c.lineJoin='round';c.stroke();}seg=[];};
+  d.forEach((v,i)=>{if(v==null||!isFinite(v))flush();else seg.push([i,v]);});flush();
+  if(g.ref){c.setLineDash([7,6]);c.strokeStyle=RC.dim;c.lineWidth=1.5;c.beginPath();c.moveTo(x,Y(g.ref));c.lineTo(x+w,Y(g.ref));c.stroke();c.setLineDash([]);}
+  c.restore();c.font=fnt(K.gx);c.fillStyle=RC.dim;c.fillText('0:00',x,py+ph+4);c.textAlign='right';c.fillText(fmtTime(dur),x+w,py+ph+4);c.textAlign='left';
+}
+const graphH=K=>K.gl+8+K.gh+K.gx+10;
+function drawCard(c,R,comp,x,y,w,dry,hBg,K){
+  const P=K.P,iw=w-2*P;let yy=y+P;c.textBaseline='top';
+  if(!dry){rr(c,x,y,w,hBg,16);c.fillStyle=RC.card;c.fill();c.strokeStyle=RC.line;c.lineWidth=2;c.stroke();
+    c.font=fnt(K.tf,700);c.fillStyle=RC.text;c.fillText(comp.name,x+P,yy);badge(c,x+w-P,yy-2,comp.lvl,comp.score==null?LBL[comp.lvl]:`${LBL[comp.lvl]} · ${comp.score}`,K.bs);}
+  yy+=K.th;
+  if(!dry){rr(c,x+P,yy,iw,8,4);c.fillStyle=RC.line;c.fill();if(comp.score>0){rr(c,x+P,yy,Math.max(8,iw*comp.score/100),8,4);c.fillStyle=RC[comp.lvl];c.fill();}}
+  yy+=K.bar;
+  // Wide (full-row) cards put graph + numbers on the left and findings on the right.
+  const wide=w>1000,cw2=wide?(iw-40)/2:iw,lx=x+P,rx=wide?x+P+cw2+40:x+P;
+  const g=R.graphs&&R.graphs[comp.key];
+  if(g&&valid(g.d).length>=2){if(!dry)drawGraph(c,g,lx,yy,cw2,R.dur,K);yy+=graphH(K);}
+  c.font=fnt(K.mf);const top=y+P+K.th+K.bar;
+  for(const[k,v]of comp.metrics){if(!dry){c.fillStyle=RC.dim;c.fillText(k,lx,yy);const kw=c.measureText(k).width;c.fillStyle=RC.text;c.textAlign='right';c.fillText(fitText(c,v,cw2-kw-16),lx+cw2,yy);c.textAlign='left';}yy+=K.mr;}
+  let fy;
+  if(wide){fy=top;if(!dry){c.fillStyle=RC.line;c.fillRect(rx-21,top,2,Math.max(yy,top+40)-top);}}
+  else{yy+=6;if(!dry){c.fillStyle=RC.line;c.fillRect(x+P,yy,iw,2);}yy+=12;fy=yy;}
+  c.font=fnt(K.ff);
+  for(const f of comp.findings){const ls=wrapText(c,f.t,cw2-K.ff-6);
+    if(!dry){c.beginPath();c.arc(rx+6,fy+K.fl/2,5.5,0,Math.PI*2);c.fillStyle=RC[f.l]||RC.info;c.fill();c.fillStyle=RC.text;ls.forEach((l,i)=>c.fillText(l,rx+K.ff+6,fy+i*K.fl));}
+    fy+=ls.length*K.fl+6;}
+  return Math.max(yy,fy)+P-6-y;
+}
+function bHeader(c,R,y,dry){
+  const W=RP.W,M=RP.M,band=128;c.textBaseline='top';
+  const dev=`${DEV.os} · ${DEV.threads||'?'} CPU threads · ${DEV.mem?(DEV.mem>=8?'8+ GB':DEV.mem+' GB'):'unknown'} RAM · GPU: ${DEV.gpu}`;
+  c.font=fnt(20,600);const dl=wrapText(c,dev,W-2*M);c.font=fnt(15);const ul=wrapText(c,'Browser: '+DEV.ua,W-2*M);
+  if(!dry){c.fillStyle=RC.accent;c.fillRect(0,0,W,band);c.fillStyle='#fff';c.font=fnt(46,700);c.fillText('Web Stress Test Report',M,24);
+    c.font=fnt(21);c.globalAlpha=.9;c.fillText(`${R.date.toLocaleString()}  ·  ${runDesc(R)}`,M,84);c.globalAlpha=1;
+    let yy=band+18;c.font=fnt(20,600);c.fillStyle=RC.text;dl.forEach(l=>{c.fillText(l,M,yy);yy+=27;});c.font=fnt(15);c.fillStyle=RC.dim;ul.forEach(l=>{c.fillText(l,M,yy);yy+=20;});}
+  return band+18+dl.length*27+ul.length*20-y;
+}
+function bVerdict(c,R,y,dry){
+  const M=RP.M,x=M,w=RP.W-2*M,tx=x+240,tw=x+w-24-tx;c.textBaseline='top';
+  c.font=fnt(32,700);const vl=wrapText(c,VERDICT[R.lvl],tw);
+  let yy=y+26+40+vl.length*40+14;c.font=fnt(18,600);
+  const chips=[];let cx=tx,cy=yy;for(const k of [...R.comps,...R.skipped.map(n=>({name:n,lvl:'na',score:null}))]){const lab=`${k.name}  ${k.score==null?LBL[k.lvl].toLowerCase():k.score}`,cw=c.measureText(lab).width+46;if(cx+cw>x+w-24&&cx>tx){cx=tx;cy+=42;}chips.push([k,lab,cx,cy,cw]);cx+=cw+10;}
+  const h=Math.max(200,cy+34+26-y);
+  if(!dry){rr(c,x,y,w,h,18);c.fillStyle=RC.card;c.fill();c.strokeStyle=RC.line;c.lineWidth=2;c.stroke();
+    const gx=x+120,gy=y+h/2+4,r=72;c.lineCap='round';c.lineWidth=16;c.strokeStyle=RC.line;c.beginPath();c.arc(gx,gy,r,.75*Math.PI,2.25*Math.PI);c.stroke();
+    if(R.score>0){c.strokeStyle=RC[R.lvl];c.beginPath();c.arc(gx,gy,r,.75*Math.PI,(.75+1.5*R.score/100)*Math.PI);c.stroke();}c.lineCap='butt';
+    c.textAlign='center';c.textBaseline='middle';c.fillStyle=RC.text;c.font=fnt(54,700);c.fillText(scoreTxt(R.score),gx,gy-4);c.font=fnt(16);c.fillStyle=RC.dim;c.fillText('out of 100',gx,gy+36);c.textAlign='left';c.textBaseline='top';
+    c.font=fnt(18,700);badge(c,tx+c.measureText(LBL[R.lvl]).width+21.6,y+26,R.lvl,LBL[R.lvl],18);
+    c.font=fnt(32,700);c.fillStyle=RC.text;vl.forEach((l,i)=>c.fillText(l,tx,y+26+40+i*40));
+    c.font=fnt(18,600);for(const[k,lab,px,py,cw]of chips){rr(c,px,py,cw,34,17);c.fillStyle='#fff';c.fill();c.strokeStyle=RC.line;c.lineWidth=1.5;c.stroke();
+      c.beginPath();c.arc(px+18,py+17,6,0,Math.PI*2);c.fillStyle=RC[k.lvl];c.fill();c.fillStyle=RC.text;c.textBaseline='middle';c.fillText(lab,px+32,py+18);c.textBaseline='top';}}
+  return h;
+}
+function bNotes(c,R,y,dry){c.textBaseline='top';c.font=fnt(16);let yy=y;
+  for(const n of R.notes){const ls=wrapText(c,n,RP.W-2*RP.M);if(!dry){c.fillStyle=RC.dim;ls.forEach((l,i)=>c.fillText(l,RP.M,yy+i*22));}yy+=ls.length*22+4;}return yy-y;}
+function layoutReport(R,pageH){
+  const W=RP.W,M=RP.M,G=24,cols=R.comps.length>4?3:2,K=KS[cols],cw=(W-2*M-G*(cols-1))/cols,mc=document.createElement('canvas').getContext('2d');
+  const blocks=[(c,y,d)=>bHeader(c,R,y,d),(c,y,d)=>bVerdict(c,R,y,d)];
+  for(let i=0;i<R.comps.length;i+=cols){const row=R.comps.slice(i,i+cols),rw=row.length===1&&R.comps.length>1?W-2*M:cw; // lone last card spans the row
+    blocks.push((c,y,d)=>{const h=Math.max(...row.map((k,j)=>drawCard(c,R,k,M+j*(rw+G),y,rw,true,0,K)));if(!d)row.forEach((k,j)=>drawCard(c,R,k,M+j*(rw+G),y,rw,false,h,K));return h;});}
+  if(R.notes&&R.notes.length)blocks.push((c,y,d)=>bNotes(c,R,y,d));
+  const pages=[[]],lim=pageH-60;let y=M*0.75;
+  for(const b of blocks){const h=b(mc,y,true);if(y+h>lim&&pages[pages.length-1].length){pages.push([]);y=M*0.75;}pages[pages.length-1].push([b,y]);y+=h+G;}
+  const H=isFinite(pageH)?pageH:Math.ceil(y-G+70);
+  return pages.map((pg,i)=>{const cv=document.createElement('canvas');cv.width=W;cv.height=H;const c=cv.getContext('2d');c.fillStyle=RC.bg;c.fillRect(0,0,W,H);
+    for(const[b,yy]of pg)b(c,yy,false);
+    c.textBaseline='alphabetic';c.font=fnt(15);c.fillStyle=RC.dim;c.fillText('Web Stress Test · generated locally in the browser',M,H-28);
+    if(pages.length>1){c.textAlign='right';c.fillText(`Page ${i+1} of ${pages.length}`,W-M,H-28);c.textAlign='left';}return cv;});
+}
+/* One tall render; for PDF shrink it onto one page if it's within 20% of fitting, otherwise paginate. */
+function renderReport(R,pageH){
+  const[tall]=layoutReport(R,Infinity);if(!isFinite(pageH)||tall.height<=pageH)return[isFinite(pageH)?padTo(tall,pageH):tall];
+  const s=pageH/tall.height;if(s<0.8)return layoutReport(R,pageH);
+  const cv=document.createElement('canvas');cv.width=RP.W;cv.height=pageH;const c=cv.getContext('2d');c.fillStyle=RC.bg;c.fillRect(0,0,cv.width,pageH);
+  c.imageSmoothingQuality='high';c.drawImage(tall,(RP.W-RP.W*s)/2,0,RP.W*s,pageH);return[cv];
+}
+function padTo(cv,H){const o=document.createElement('canvas');o.width=cv.width;o.height=H;const c=o.getContext('2d');c.fillStyle=RC.bg;c.fillRect(0,0,o.width,H);c.drawImage(cv,0,0);
+  c.fillStyle=RC.bg;c.fillRect(0,cv.height-50,o.width,50);c.textBaseline='alphabetic';c.font=fnt(15);c.fillStyle=RC.dim;c.fillText('Web Stress Test · generated locally in the browser',RP.M,H-28);return o;}
+function pdfFromJpegs(imgs){ // minimal PDF: one full-page JPEG per US Letter page
+  const enc=new TextEncoder(),parts=[],offs=[];let len=0;
+  const push=x=>{const b=typeof x==='string'?enc.encode(x):x;parts.push(b);len+=b.length;};
+  const obj=(n,fn)=>{offs[n]=len;push(n+' 0 obj\n');fn();push('\nendobj\n');};
+  push(new Uint8Array([37,80,68,70,45,49,46,52,10,37,226,227,207,211,10]));
+  const n=imgs.length,total=3+n*3,cs='q 612 0 0 792 0 0 cm /Im0 Do Q';
+  obj(1,()=>push('<< /Type /Catalog /Pages 2 0 R >>'));
+  obj(2,()=>push(`<< /Type /Pages /Kids [${imgs.map((_,i)=>(3+i*3)+' 0 R').join(' ')}] /Count ${n} >>`));
+  imgs.forEach((im,i)=>{const p=3+i*3;
+    obj(p,()=>push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /XObject << /Im0 ${p+2} 0 R >> >> /Contents ${p+1} 0 R >>`));
+    obj(p+1,()=>push(`<< /Length ${cs.length} >>\nstream\n${cs}\nendstream`));
+    obj(p+2,()=>{push(`<< /Type /XObject /Subtype /Image /Width ${im.w} /Height ${im.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${im.data.length} >>\nstream\n`);push(im.data);push('\nendstream');});});
+  const xref=len;let x=`xref\n0 ${total}\n0000000000 65535 f \n`;for(let i=1;i<total;i++)x+=String(offs[i]).padStart(10,'0')+' 00000 n \n';
+  push(x+`trailer\n<< /Size ${total} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`);
+  return new Blob(parts,{type:'application/pdf'});
+}
+const toBlob=(cv,t,q)=>new Promise((res,rej)=>cv.toBlob(b=>b?res(b):rej(new Error('image encoding failed')),t,q));
+function repName(ext,R){const d=R.date,p=n=>String(n).padStart(2,'0');return`stress-report-${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}.${ext}`;}
+function dlBlob(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),10000);}
+async function saveVisual(kind,btn){
+  const lbl=btn.textContent;btn.disabled=true;btn.textContent='Rendering…';
+  try{await sleep(30);const b=repBase(),R=Object.assign({},b,summarize(b));
+    if(kind==='png'){const[cv]=renderReport(R,Infinity);dlBlob(await toBlob(cv,'image/png'),repName('png',R));}
+    else{const imgs=[];for(const cv of renderReport(R,2200)){const b=await toBlob(cv,'image/jpeg',0.92);imgs.push({w:cv.width,h:cv.height,data:new Uint8Array(await b.arrayBuffer())});}dlBlob(pdfFromJpegs(imgs),repName('pdf',R));}
+  }catch(e){alert('Could not create the file: '+(e&&e.message||e));}
+  finally{btn.disabled=false;btn.textContent=lbl;}
+}
+
 /* ---------- wiring ---------- */
 $('startBtn').onclick=()=>{if(S&&S.running)stop('user');else start();};
-$('repBtn').onclick=()=>{if(LAST)showReport(LAST);};
+$('repBtn').onclick=()=>{if(hasResults())showReport(repBase());};
 $('repClose').onclick=()=>$('repDlg').close();
-$('repCopy').onclick=()=>copyText(reportText(LAST),$('repCopy'),'Copy report');
-$('repSave').onclick=()=>{const d=LAST.date,p=n=>String(n).padStart(2,'0');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([reportText(LAST)],{type:'text/plain'}));a.download=`stress-report-${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}.txt`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),5000);};
+$('repCopy').onclick=()=>copyText(reportText(repBase()),$('repCopy'),'Copy report');
+$('repSave').onclick=()=>{const b=repBase();dlBlob(new Blob([reportText(b)],{type:'text/plain'}),repName('txt',b));};
+$('repPdf').onclick=()=>saveVisual('pdf',$('repPdf'));
+$('repPng').onclick=()=>saveVisual('png',$('repPng'));
 $('setBtn').onclick=()=>{$('cfg-gpu').value=CFG.gpu;$('cfg-ram').value=CFG.ramPct;$('cfg-disk').value=CFG.diskMB;$('cfg-net').value=CFG.net;$('cfg-url').value=CFG.netUrl;$('setDlg').showModal();};
 $('setCancel').onclick=()=>$('setDlg').close();
 $('setSave').onclick=()=>{CFG.gpu=$('cfg-gpu').value;CFG.ramPct=+$('cfg-ram').value;CFG.diskMB=+$('cfg-disk').value;CFG.net=$('cfg-net').value;CFG.netUrl=$('cfg-url').value.trim();
