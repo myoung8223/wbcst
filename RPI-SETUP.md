@@ -1,6 +1,6 @@
 # Raspberry Pi test server setup
 
-This guide turns a Raspberry Pi into a dedicated LAN server for Web Stress Test. The Pi serves the test page itself and runs the network test, using `down.php` and `up.php`. Devices on your network then open `http://wbcst.local/`, or the Pi's IP address, and everything works, including the network test.
+This guide turns a Raspberry Pi into a dedicated LAN server for Web Stress Test. The Pi serves the test page itself and runs the network test, using `down.php` and `up.php`. Devices on your network then open `http://wbcst.local/`, or the Pi's IP address, and get the full tester, including the network test. A few browser features need extra setup over plain `http://`; see [Plain `http://` limitations](#plain-http-limitations-and-how-to-lift-them).
 
 The setup uses Apache with PHP-FPM, without a database, and is hardened for this single job.
 
@@ -214,6 +214,28 @@ Find the Pi's current IP and MAC address (the MAC is needed for a reservation) w
 hostname -I; ip -br link show eth0
 ```
 
+## Plain `http://` limitations (and how to lift them)
+
+This setup serves the tester over plain **`http://`**. Browsers only allow some features on secure pages (`https://`, local files or `localhost`), so over `http://` these are **unavailable**:
+
+- **Screen wake lock:** the device may dim and lock on its normal idle timer during long tests.
+- **Webcam and microphone tests**
+- **Battery and thermal readings**
+
+Everything else works: the CPU, GPU, RAM, storage and network tests, the screen, keyboard, touch and speaker tests, and reports. The page shows a notice explaining this when it's opened over `http://`.
+
+Ways around it:
+
+1. **Managed Chromebooks (recommended).** In the Google Admin console, set the Chrome policy **OverrideSecurityRestrictionsOnInsecureOrigin**. Search the settings for "insecure origin". List the server's address(es), for example:
+   ```
+   http://wbcst.local
+   http://192.168.1.50
+   ```
+   Chrome then treats those addresses like `https` sites, and every feature works. Nothing changes on the Pi.
+2. **A single unmanaged device.** Open `chrome://flags/#unsafely-treat-insecure-origin-as-secure`, enter the server address, enable it and relaunch Chrome. Managed devices usually block flags.
+3. **Serve over `https://`.** This requires a certificate the devices trust: one from an internal certificate authority, or a real domain name with a DNS-validated certificate. It's more setup, but it works for every browser.
+4. **Split use.** Run the peripheral and screen tests from the GitHub Pages copy (`https`), and the stress and network tests from the Pi.
+
 ## Watching network use live
 
 ```sh
@@ -230,5 +252,6 @@ htop                          # CPU load: if PHP-FPM maxes out the CPU, the Pi i
 | `down.php?bytes=10` shows PHP source code instead of downloading | PHP isn't connected to Apache. Re-run the `a2enmod` / `a2enconf` lines in step 3 and restart Apache. |
 | The Network tile says "No test server here" | Open the page from the Pi's address, not a saved copy or GitHub Pages. Check that `down.php` and `up.php` are in `/var/www/html`. |
 | `wbcst.local` doesn't resolve | mDNS is blocked on that network. Use the IP address instead (see above). |
+| Yellow "Opened over plain http://" notice; webcam/mic disabled; device locks during tests | Expected over `http://`. See [Plain `http://` limitations](#plain-http-limitations-and-how-to-lift-them). |
 | Results far below the table above | Make sure the Pi is on wired Ethernet, check `htop` during a test, and test with fewer devices at once. |
 | "Some uploads were cut short" in the report | `post_max_size` is below 8M. Check `/etc/php/$PHPV/fpm/conf.d/99-wbcst.ini`. |

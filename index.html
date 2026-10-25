@@ -25,6 +25,8 @@ button:disabled,select:disabled{opacity:.5;cursor:default}
 button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600;min-width:110px}
 button.primary.stop{background:var(--bad);border-color:var(--bad)}
 .hint{font-size:12px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#secNote{color:var(--warn);white-space:normal}
+#secNote[hidden]{display:none}
 main{flex:1;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(2,1fr);gap:8px;min-height:0}
 .tile{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px 11px;display:flex;flex-direction:column;gap:5px;min-height:0;min-width:0;overflow:hidden}
 .th{display:flex;align-items:center;gap:8px;font-weight:600}
@@ -125,6 +127,7 @@ dialog h2{margin:0 0 10px;font-size:18px}
   <button id="perBtn" title="Test webcam, microphone, speakers, keyboard and touch">Peripherals</button>
   <button id="repBtn" disabled title="Health report for everything tested so far">Report</button>
 </header>
+<div id="secNote" class="hint" hidden>⚠ Opened over plain <b>http://</b>, so the browser blocks <b>screen wake lock, webcam, microphone, battery and thermal readings</b> (they need https://). The device may dim and lock during long tests. Fix: open the page over https:// or as a local file, or have your admin trust this address (see README).</div>
 <div id="hint" class="hint">Tips: close other tabs, keep this tab in front, and test for 10+ minutes so heat builds up. Unplug to measure battery drain; plug in to check the charger.</div>
 
 <main>
@@ -561,7 +564,7 @@ function render(st,el){
   const y=st.sys;
   txt('sys-big',y.b?fmt(y.b.level*100,0)+'%':'n/a');txt('sys-chg',y.b?(y.b.charging?'plugged in':'on battery'):'n/a');
   if(y.b&&y.b0&&!y.b.charging&&el>=300)txt('sys-drain',fmt((y.b0.level-y.b.level)*100/(el/3600),0)+'%/h');else txt('sys-drain',y.b&&!y.b.charging?'after 5 min':'–');
-  txt('sys-pres',y.pState);txt('sys-lag',fmt(y.lagMax,0)+' ms');txt('sys-wake',wakeLock&&!wakeLock.released?'held':'not held');txt('sys-hid',st.hiddenSec?fmtTime(st.hiddenSec):'none');
+  txt('sys-pres',y.pState);txt('sys-lag',fmt(y.lagMax,0)+' ms');txt('sys-wake',!window.isSecureContext?'blocked (http)':!('wakeLock' in navigator)?'unsupported':wakeLock&&!wakeLock.released?'held':'not held');txt('sys-hid',st.hiddenSec?fmtTime(st.hiddenSec):'none');
   live('sys',y.pState==='critical'?'warn':'run');spark('sys-spark',y.hist,'#ff7a59');
 }
 function resetTiles(st){
@@ -691,6 +694,7 @@ function assess(st){
   if(st.en.net)GR('net',st.net.lat,'Latency per request (ms)','#13a3a3');
   if(st.sys.b)GR('batt',st.sys.bh,'Battery level over time (%)','#e07b2f');
   GR('sys',st.sys.hist,'UI responsiveness lag (ms, lower is better)','#ff5a36');
+  if(!window.isSecureContext)R.notes.push('Opened over plain http://, so screen wake lock, battery and thermal readings were unavailable. If the device dimmed or locked, timing and GPU results may be affected.');
   if(dur<120)R.notes.push('Short test — run 10+ minutes for reliable throttling and stability results.');
   R.notes.push('Throttling is relative to this unit’s own first minute. Fanless laptops and Chromebooks throttle more by design, so compare against a known-good unit of the same model.');
   if(st.en.disk)R.notes.push('*Storage reads may be served from cache and look faster than the drive really is.');
@@ -769,7 +773,7 @@ let camStream=null,camTok=0;
 function camStop(){camTok++;if(camStream)camStream.getTracks().forEach(t=>t.stop());camStream=null;$('camVid').srcObject=null;txt('camBtn','Start');}
 async function camStart(){
   camStop();const tok=camTok;
-  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){txt('camInfo','Camera API unavailable (open the page from https:// or a local file).');return;}
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){txt('camInfo',window.isSecureContext?'Camera API unavailable in this browser.':'Blocked: the browser only allows the camera on https:// pages or local files. See README.');PER.cam.info='';return;}
   txt('camInfo','Starting…');
   try{
     const id=$('camSel').value,v={width:{ideal:1920},height:{ideal:1080}};if(id)v.deviceId={exact:id};
@@ -798,7 +802,7 @@ const audio=()=>{if(!actx)actx=new (window.AudioContext||window.webkitAudioConte
 function micStop(){micTok++;if(micStream)micStream.getTracks().forEach(t=>t.stop());micStream=null;txt('micBtn','Start');$('recBtn').disabled=true;$('micLvl').style.width='0';}
 async function micStart(){
   micStop();const tok=micTok;
-  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){txt('micInfo','Microphone API unavailable (open the page from https:// or a local file).');return;}
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){txt('micInfo',window.isSecureContext?'Microphone API unavailable in this browser.':'Blocked: the browser only allows the microphone on https:// pages or local files. See README.');PER.mic.info='';return;}
   txt('micInfo','Starting…');
   try{
     const id=$('micSel').value,a={echoCancellation:false,noiseSuppression:false,autoGainControl:false};if(id)a.deviceId={exact:id};
@@ -1117,6 +1121,7 @@ $('setSave').onclick=()=>{CFG.gpu=$('cfg-gpu').value;CFG.ramPct=+$('cfg-ram').va
   try{localStorage.setItem('cbstress-cfg',JSON.stringify(CFG));}catch(e){}txt('gpu-load',CFG.gpu);$('setDlg').close();probeServer();};
 for(const k of KEYS)$('en-'+k).onchange=()=>{if(!(S&&S.running)){$('t-'+k).classList.toggle('off',!$('en-'+k).checked);live(k,$('en-'+k).checked?'idle':'off');}};
 devInfo();resetTiles(null);probeServer();
+if(!window.isSecureContext){$('secNote').hidden=false;txt('camInfo','Unavailable over http:// (browser security rule). Use https:// or a local copy.');txt('micInfo','Unavailable over http:// (browser security rule). Use https:// or a local copy.');$('camBtn').disabled=$('micBtn').disabled=true;}
 </script>
 </body>
 </html>

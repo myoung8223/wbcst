@@ -80,7 +80,19 @@ The stress tests work in any current browser. **Chrome, Edge or ChromeOS give th
 | Thermal pressure | ✅ | ❌ |
 | Installed RAM size | ✅ (reported as up to "8+ GB") | ❌ (assumes 4 GB) |
 
-Webcam and microphone access need the page to be opened from `https://` or as a local file. The browser asks for permission the first time.
+### Secure page address required for some features
+
+Browsers only allow the following on **secure** pages: `https://`, a local file, or `localhost`.
+
+- **Screen wake lock**, which keeps the device from dimming and locking during a test
+- **Webcam and microphone**
+- **Battery and thermal readings**
+
+The GitHub Pages copy (`https`) and a downloaded local copy have everything. A server reached over **plain `http://`**, such as a Raspberry Pi on the LAN, runs every other test, but these features are unavailable, and the page shows a notice saying so.
+
+On managed Chromebooks, an admin can lift this for your server by listing its address in the Chrome policy **OverrideSecurityRestrictionsOnInsecureOrigin**. See [RPI-SETUP.md](RPI-SETUP.md#plain-http-limitations-and-how-to-lift-them) for that and other options.
+
+The browser asks permission before using the webcam or microphone the first time.
 
 ## Limitations
 
@@ -149,4 +161,4 @@ The Network tile shows why and switches itself off, and the report lists Network
 ## Credits
 
 - **Code:** written by **Claude Opus 5.5 (Medium)**, Anthropic's AI model
-- **Concept, direction and testing:** [Mike Young](https://github.com/myoung8223)
+- **Concept, direction and testing:** [myoung8223](https://github.com/myoung8223)
