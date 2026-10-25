@@ -110,4 +110,4 @@ A **custom URL** can be set in ⚙ Settings, for latency and download testing ag
 ## Credits
 
 - **Code:** written by **Claude Opus 5.5 (Medium)**, Anthropic's AI model
-- **Concept, direction and testing:** [myoung8223](https://github.com/myoung8223)
+- **Concept, direction and testing:** [Mike Young](https://github.com/myoung8223)
