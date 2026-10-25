@@ -13,7 +13,7 @@ It was built for checking school Chromebooks, but it works on any computer with 
 - **Health report** at the end: an overall score, plus PASS / WARN / FAIL for each component with plain-language findings
 - **Peripherals check**: webcam, microphone, speakers, keyboard, and trackpad/touch
 - **Screen test**: fullscreen patterns for dead/stuck pixels, backlight bleed, impact damage and banding, plus a touchscreen dead-zone test
-- **Battery check**: drain rate under full load, estimated runtime, charger check
+- **Power & thermal monitor** (always on): battery drain and charger check, thermal pressure, and UI freezes, tracked during every run
 - **Report export**: one-page PDF, PNG image, plain text, or copy to clipboard
 - **Private**: everything runs in the browser, and no results are uploaded anywhere
 
@@ -24,7 +24,7 @@ It was built for checking school Chromebooks, but it works on any computer with 
 3. Close other tabs, choose a duration, and press **Start test**.
 4. Press **Stop** (or let the timer finish) to see the health report.
 
-For meaningful results, **run for at least 10 minutes** so the device heats up and any thermal throttling shows. To test the battery, unplug the device and don't start at 100%.
+For meaningful results, **run for at least 10 minutes** so the device heats up and any thermal throttling shows. To test the battery, unplug the device, don't start at 100%, and run for at least 10 minutes.
 
 ## What each test does
 
@@ -37,6 +37,14 @@ For meaningful results, **run for at least 10 minutes** so the device heats up a
 | **Network** | Times latency, download and upload against a public test server (see below). | Failed requests, high latency/jitter, connection drops, inconsistent speeds |
 
 Throttling is judged against the device's own first minute. Fanless devices throttle more by design, so the best comparison is a known-good unit of the same model.
+
+### Power & thermal monitor
+
+The **Power & thermal** tile isn't a test that can be switched off. It's a passive monitor that adds no load, and it runs during every test, even a network-only run, to give context:
+
+- **Battery**: level, charging state, drain rate under load, estimated runtime, and a charger check. The report gets a **Battery** card only when there's something to show: a measured drain or charge rate, or a warning. Otherwise it's a one-line note.
+- **Thermal pressure** (Chromium only) and **UI freezes**: added to the **CPU** card, since both reflect how hard the device is working. A long freeze during a light test points to the device itself struggling.
+- **Background time**: if the tab was hidden for part of the run, the report notes that the results are less reliable.
 
 ### Scoring
 
