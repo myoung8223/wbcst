@@ -42,6 +42,7 @@ canvas.spark{width:100%;flex:1;min-height:28px;display:block}
 #gpuCanvas{width:100%;flex:1;min-height:40px;object-fit:cover;border-radius:6px;background:#000;display:block}
 #t-gpu canvas.spark{flex:none;height:32px}
 .tile.off{opacity:.45}
+.pill{font-size:10px;font-weight:600;color:var(--dim);border:1px solid var(--line);border-radius:9px;padding:1px 7px;text-transform:uppercase;letter-spacing:.3px}
 dialog{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:16px;max-width:min(1100px,96vw);max-height:94vh;overflow:auto}
 dialog::backdrop{background:rgba(0,0,0,.65)}
 dialog h2{margin:0 0 10px;font-size:18px}
@@ -164,7 +165,7 @@ dialog h2{margin:0 0 10px;font-size:18px}
   </section>
 
   <section class="tile" id="t-sys">
-    <div class="th"><span>System</span><span class="dot" id="d-sys"></span><span class="st" id="s-sys">Idle</span></div>
+    <div class="th"><span title="Passive monitor: adds no load, runs during every test">Power &amp; thermal</span><span class="pill" title="Passive monitor: adds no load, runs during every test">always on</span><span class="dot" id="d-sys"></span><span class="st" id="s-sys">Idle</span></div>
     <div class="big"><span id="sys-big">–</span><small>battery</small></div>
     <div class="stats"><span>Power</span><b id="sys-chg">–</b><span>Drain</span><b id="sys-drain">–</b><span>Thermal</span><b id="sys-pres">–</b><span>UI freeze</span><b id="sys-lag">–</b><span>Screen lock</span><b id="sys-wake">–</b><span>Background</span><b id="sys-hid">–</b></div>
     <canvas class="spark" id="sys-spark"></canvas>
@@ -646,8 +647,9 @@ function assess(st){
         else{if(hrs>=0.08&&l1>l0)m.push(['Charge rate',fmt((l1-l0)/hrs,0)+'%/h under load']);f.push(F('ok','Charger kept up under full load.'));}
       }else f.push(F('info','Charger was connected or disconnected during the test, so rates were not measured.'));
       if(y.jumps)f.push(F('warn',`Battery level dropped suddenly ${y.jumps} time(s) (3%+ in one step) — typical of a worn battery or a confused fuel gauge.`));
-      f.push(F('info',battTip()));
-      R.comps.push(comp('batt','Battery',m,f));
+      // Only give Battery its own card when it measured something or found a problem; otherwise a one-line note.
+      if(f.some(x=>x.l!=='info')||m.some(([k])=>/rate|Drain|runtime/i.test(k))){f.push(F('info',battTip()));R.comps.push(comp('batt','Battery',m,f));}
+      else R.notes.push('Battery: '+f.map(x=>x.t).join(' '));
     }
     // Thermal pressure and UI responsiveness describe CPU load, so they join the CPU card.
     if(y.po){const tot=Object.values(y.pCount).reduce((a,b)=>a+b,0)||1,cr=(y.pCount.critical||0)/tot,se=(y.pCount.serious||0)/tot;
