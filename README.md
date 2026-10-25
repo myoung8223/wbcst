@@ -8,7 +8,7 @@ It was built for checking school Chromebooks, but it works on any computer with 
 
 ## Features
 
-- **Stress tests** for CPU, GPU, RAM and storage, plus an optional network test against your own server, with live readings and graphs on a single screen
+- **Stress tests** for CPU, GPU, RAM and storage, plus an optional network test against your own server (a Raspberry Pi works well; see [RPI-SETUP.md](RPI-SETUP.md)), with live readings and graphs on a single screen
 - **Run until stopped or timed**: run until you press Stop, or pick 1–60 minutes
 - **Health report** at the end: an overall score, plus PASS / WARN / FAIL for each component with plain-language findings
 - **Peripherals check**: webcam, microphone, speakers, keyboard, and trackpad/touch
@@ -20,7 +20,7 @@ It was built for checking school Chromebooks, but it works on any computer with 
 ## Quick start
 
 1. Download `index.html`.
-2. Open it in Chrome or Edge, either by double-clicking or from the Chromebook's Files app. It can also be hosted on any web host, such as GitHub Pages. For the network test, host it on a PHP server (see [Network test server](#network-test-server)).
+2. Open it in Chrome or Edge, either by double-clicking or from the Chromebook's Files app. It can also be hosted on any web host, such as GitHub Pages. For the network test, host it on a PHP server (see [Network test server](#network-test-server)), such as a Raspberry Pi set up with **[RPI-SETUP.md](RPI-SETUP.md)**.
 3. Close other tabs, choose a duration, and press **Start test**.
 4. Press **Stop** (or let the timer finish) to see the health report.
 
@@ -110,25 +110,22 @@ Any web server that runs PHP, with `index.html`, `down.php` and `up.php` in the 
 | `down.php` | `GET down.php?bytes=N` returns N bytes of random data. `bytes=0` is used to measure latency. |
 | `up.php` | Accepts a POST, discards it (nothing is written to disk) and replies with the number of bytes received. |
 
-### Setup (Debian / Raspberry Pi OS example)
+### Setup
 
-```sh
-sudo apt install apache2 php libapache2-mod-php
-sudo mkdir -p /var/www/html/wbcst
-sudo cp index.html down.php up.php /var/www/html/wbcst/
-```
+**Raspberry Pi:** see **[RPI-SETUP.md](RPI-SETUP.md)** for a complete, security-hardened walkthrough. It starts from a fresh Raspberry Pi OS Lite install and ends with the tester at `http://wbcst.local/`.
 
-Then open `http://<server-ip>/wbcst/` on the device being tested. The page finds `down.php` and `up.php` automatically. To confirm the scripts are running, open `http://<server-ip>/wbcst/down.php?bytes=10`: it should download a 10-byte file, not show PHP source code.
+**Any other server:** copy `index.html`, `down.php` and `up.php` into a folder served by PHP, then open that folder's address on the device being tested. The page finds `down.php` and `up.php` automatically. To confirm PHP is running, open `down.php?bytes=10` in that folder: it should download a 10-byte file, not show PHP source code. Make sure the server's PHP is up to date. In particular, it needs the October 2026 fixes for CVE-2026-109618 and CVE-2026-109619.
 
 **Tips**
 
 - Connect the server with **wired Ethernet**, and give it a fixed IP (static or DHCP reservation).
 - The page sends at most 6 MB per upload, which fits PHP's default `post_max_size` of 8 MB.
 - Transfer sizes adapt so each one takes about a second, so fast networks are measured accurately.
+- Don't expose the server to the internet without access control: `down.php` will send anyone who can reach it up to 100 MB per request.
 
 ### Using a server from elsewhere
 
-If the page is opened as a local file, or from another site, set the server's folder address in **⚙ Settings → Network server → Another server…**, for example `http://192.168.1.50/wbcst/`. The scripts send the CORS header needed for this.
+If the page is opened as a local file, or from another site, set the server's folder address in **⚙ Settings → Network server → Another server…**, for example `http://192.168.1.50/` or `http://wbcst.local/`. The scripts send the CORS header needed for this.
 
 Browsers block requests from an `https://` page to an `http://` server. So with a plain-`http` LAN server, open the page from that server, or as a local file, rather than from GitHub Pages.
 
@@ -152,4 +149,4 @@ The Network tile shows why and switches itself off, and the report lists Network
 ## Credits
 
 - **Code:** written by **Claude Opus 5.5 (Medium)**, Anthropic's AI model
-- **Concept, direction and testing:** [myoung8223](https://github.com/myoung8223)
+- **Concept, direction and testing:** [Mike Young](https://github.com/myoung8223)
