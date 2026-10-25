@@ -233,7 +233,7 @@ Ways around it:
    ```
    Chrome then treats those addresses like `https` sites, and every feature works. Nothing changes on the Pi.
 2. **A single unmanaged device.** Open `chrome://flags/#unsafely-treat-insecure-origin-as-secure`, enter the server address, enable it and relaunch Chrome. Managed devices usually block flags.
-3. **Serve over `https://`.** This requires a certificate the devices trust: one from an internal certificate authority, or a real domain name with a DNS-validated certificate. It's more setup, but it works for every browser.
+3. **Serve over `https://`.** The simplest way is a self-signed certificate; see [Optional: HTTPS with a self-signed certificate](#optional-https-with-a-self-signed-certificate). Each device clicks past a warning once. A warning-free setup needs a certificate the devices already trust: one from an internal certificate authority, or a real domain name with a DNS-validated certificate.
 4. **Split use.** Run the peripheral and screen tests from the GitHub Pages copy (`https`), and the stress and network tests from the Pi.
 
 ## Watching network use live
@@ -255,3 +255,69 @@ htop                          # CPU load: if PHP-FPM maxes out the CPU, the Pi i
 | Yellow "Opened over plain http://" notice; webcam/mic disabled; device locks during tests | Expected over `http://`. See [Plain `http://` limitations](#plain-http-limitations-and-how-to-lift-them). |
 | Results far below the table above | Make sure the Pi is on wired Ethernet, check `htop` during a test, and test with fewer devices at once. |
 | "Some uploads were cut short" in the report | `post_max_size` is below 8M. Check `/etc/php/$PHPV/fpm/conf.d/99-wbcst.ini`. |
+
+---
+
+## Optional: HTTPS with a self-signed certificate
+
+This adds an `https://` address alongside the existing `http://` one. Pages opened over `https://` count as secure, so **screen wake lock, webcam, microphone, battery and thermal readings** all work.
+
+The trade-off: the certificate isn't from an authority browsers know, so each device shows a **"Your connection is not private"** warning the first time. Click **Advanced → Proceed to wbcst.local**. Chrome remembers that choice for a while.
+
+> **Managed Chromebooks** may not be allowed to click past certificate warnings. For them, the admin policy in [Plain `http://` limitations](#plain-http-limitations-and-how-to-lift-them) is simpler, and needs no HTTPS at all.
+
+### 1. Create the certificate and enable HTTPS
+
+```sh
+sudo a2enmod ssl
+sudo openssl req -x509 -newkey rsa:2048 -nodes -days 825 \
+  -keyout /etc/ssl/private/wbcst.key -out /etc/ssl/certs/wbcst.crt \
+  -subj "/CN=wbcst.local" -addext "subjectAltName=DNS:wbcst.local"
+sudo chmod 600 /etc/ssl/private/wbcst.key
+
+# Point Apache's default HTTPS site at the new certificate and enable it
+sudo sed -i 's|^\(\s*SSLCertificateFile\s\).*|\1/etc/ssl/certs/wbcst.crt|;s|^\(\s*SSLCertificateKeyFile\s\).*|\1/etc/ssl/private/wbcst.key|' \
+  /etc/apache2/sites-available/default-ssl.conf
+sudo a2ensite default-ssl
+sudo apache2ctl configtest && sudo systemctl reload apache2
+```
+
+If you enabled the firewall, also allow HTTPS:
+
+```sh
+sudo ufw allow 443/tcp
+```
+
+**Names in the certificate:**
+
+- The certificate must match the address devices use. If you skipped renaming the Pi in step 6, replace `wbcst.local` with `raspberrypi.local` in both places: `CN=` and `DNS:`.
+- To also reach it by IP address (once the IP is fixed with a DHCP reservation), list the IP too, for example:
+  ```
+  -addext "subjectAltName=DNS:wbcst.local,IP:192.168.1.50"
+  ```
+
+### 2. Check it
+
+```sh
+openssl x509 -in /etc/ssl/certs/wbcst.crt -noout -subject -enddate
+curl -sk "https://localhost/down.php?bytes=10" | wc -c      # prints 10
+```
+
+Then open **`https://wbcst.local/`** on a device, click through the warning, and confirm the yellow "Opened over plain http://" notice is **gone**.
+
+### Network speed over HTTPS
+
+The Pi 3 and Pi 4 lack hardware encryption support, so HTTPS uses noticeably more CPU on them. The network test may top out lower over `https://` than over `http://`. Compare both. If HTTPS is slower, use `http://` for network tests and `https://` for the peripheral tests. The Pi 5 doesn't have this limitation.
+
+### Renewing
+
+The certificate is valid for 825 days. To renew, run the `openssl req …` and `chmod` commands from step 1 again, then `sudo systemctl reload apache2`. Devices will show the warning once more.
+
+### Turning HTTPS off again
+
+```sh
+sudo a2dissite default-ssl
+sudo systemctl reload apache2
+```
+
+`http://` keeps working either way.
