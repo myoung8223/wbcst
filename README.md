@@ -1,6 +1,6 @@
 # Web Stress Test
 
-A browser-based hardware stress test and health check for laptops, desktops and Chromebooks. It's a single HTML file with no install, no server, no database and no external libraries. Open it in a browser, run the tests, and get a health report you can save as PDF, PNG or text.
+A browser-based hardware stress test and health check for laptops, desktops and Chromebooks. It's a single HTML file with no install, no database and no external libraries. Everything except the network test runs without a server. Open it in a browser, run the tests, and get a health report you can save as PDF, PNG or text.
 
 It was built for checking school Chromebooks, but it works on any computer with a modern browser.
 
@@ -8,19 +8,19 @@ It was built for checking school Chromebooks, but it works on any computer with 
 
 ## Features
 
-- **Stress tests** for CPU, GPU, RAM, storage and network, with live readings and graphs on a single screen
+- **Stress tests** for CPU, GPU, RAM and storage, plus an optional network test against your own server, with live readings and graphs on a single screen
 - **Run until stopped or timed**: run until you press Stop, or pick 1–60 minutes
 - **Health report** at the end: an overall score, plus PASS / WARN / FAIL for each component with plain-language findings
 - **Peripherals check**: webcam, microphone, speakers, keyboard, and trackpad/touch
 - **Screen test**: fullscreen patterns for dead/stuck pixels, backlight bleed, impact damage and banding, plus a touchscreen dead-zone test
 - **Power & thermal monitor** (always on): battery drain and charger check, thermal pressure, and UI freezes, tracked during every run
 - **Report export**: one-page PDF, PNG image, plain text, or copy to clipboard
-- **Private**: everything runs in the browser, and no results are uploaded anywhere
+- **Private**: everything runs in the browser, results are never uploaded, and no third-party services are contacted
 
 ## Quick start
 
 1. Download `index.html`.
-2. Open it in Chrome or Edge, either by double-clicking or from the Chromebook's Files app. It can also be hosted on any static web host, such as GitHub Pages.
+2. Open it in Chrome or Edge, either by double-clicking or from the Chromebook's Files app. It can also be hosted on any web host, such as GitHub Pages. For the network test, host it on a PHP server (see [Network test server](#network-test-server)).
 3. Close other tabs, choose a duration, and press **Start test**.
 4. Press **Stop** (or let the timer finish) to see the health report.
 
@@ -34,7 +34,7 @@ For meaningful results, **run for at least 10 minutes** so the device heats up a
 | **GPU** | A heavy WebGL shader renders continuously. Every 10 s a fixed frame is rendered and its pixels are compared to the first one. | Frame-rate drop-off (throttling), GPU/driver resets, inconsistent output |
 | **RAM** | Allocates a share of memory (25% by default) and repeatedly writes and verifies patterns, like a mini memtest. | Memory errors, allocation failures, bandwidth drop-off |
 | **Storage** | Writes, flushes, reads back and verifies a test file (256 MB by default) using the browser's private file system (OPFS), falling back to IndexedDB. The file is deleted afterward. | Data corruption, slow or stalling writes, slowdown over time |
-| **Network** | Times latency, download and upload against a public test server (see below). | Failed requests, high latency/jitter, connection drops, inconsistent speeds |
+| **Network** | Times latency, download and upload against your own server's `down.php` and `up.php`, and verifies every transfer arrived complete. Only available when a test server is found (see below). | Failed requests, high latency/jitter, connection drops, inconsistent speeds |
 
 Throttling is judged against the device's own first minute. Fanless devices throttle more by design, so the best comparison is a known-good unit of the same model.
 
@@ -93,16 +93,50 @@ A web page is sandboxed, so some things are out of reach:
   - macOS: System Settings › Battery
   - Linux: `/sys/class/power_supply/BAT0`
 - **Storage reads may be cached** and look faster than the drive really is.
-- **Network results include the Wi-Fi and building network**, not just the device.
+- **Network results include the Wi-Fi and the network path to the test server**, not just the device.
+- **The network test needs a server you host** (see below). It's switched off when the page is opened as a local file or from a static host such as GitHub Pages.
 - On high-end desktops a browser can't fully saturate a discrete GPU or NVMe drive. There it works best as a stability and throttling check.
 
 ## Network test server
 
-By default the network test uses Cloudflare's public speed-test endpoints (`speed.cloudflare.com/__down` and `/__up`). These are the same endpoints Cloudflare's open-source [`@cloudflare/speedtest`](https://github.com/cloudflare/speedtest) library uses. If Cloudflare can't be reached, the page falls back to timing downloads from the jsDelivr CDN, which has no upload test.
+The network test uses **only a server you host**. It contacts no public speed-test services, so it can't put load on anyone else's infrastructure.
 
-A **custom URL** can be set in ⚙ Settings, for latency and download testing against your own server. The file must be served with `Access-Control-Allow-Origin: *`, and preferably `Cache-Control: no-store`. If the page is opened over `https://`, the test server must use `https://` too.
+### What you need
 
-**Classrooms and labs:** each device downloads about 5 MB every few seconds during the network test. For a full cart, consider turning the network test off, testing a few devices at a time, or pointing it at a server on your local network. That also keeps the traffic off your internet connection.
+Any web server that runs PHP, with `index.html`, `down.php` and `up.php` in the same folder. A Raspberry Pi 4 or 5 (or similar board) on wired gigabit Ethernet with Apache and PHP is plenty. No database is needed.
+
+| File | What it does |
+|---|---|
+| `down.php` | `GET down.php?bytes=N` returns N bytes of random data. `bytes=0` is used to measure latency. |
+| `up.php` | Accepts a POST, discards it (nothing is written to disk) and replies with the number of bytes received. |
+
+### Setup (Debian / Raspberry Pi OS example)
+
+```sh
+sudo apt install apache2 php libapache2-mod-php
+sudo mkdir -p /var/www/html/wbcst
+sudo cp index.html down.php up.php /var/www/html/wbcst/
+```
+
+Then open `http://<server-ip>/wbcst/` on the device being tested. The page finds `down.php` and `up.php` automatically. To confirm the scripts are running, open `http://<server-ip>/wbcst/down.php?bytes=10`: it should download a 10-byte file, not show PHP source code.
+
+**Tips**
+
+- Connect the server with **wired Ethernet**, and give it a fixed IP (static or DHCP reservation).
+- The page sends at most 6 MB per upload, which fits PHP's default `post_max_size` of 8 MB.
+- Transfer sizes adapt so each one takes about a second, so fast networks are measured accurately.
+
+### Using a server from elsewhere
+
+If the page is opened as a local file, or from another site, set the server's folder address in **⚙ Settings → Network server → Another server…**, for example `http://192.168.1.50/wbcst/`. The scripts send the CORS header needed for this.
+
+Browsers block requests from an `https://` page to an `http://` server. So with a plain-`http` LAN server, open the page from that server, or as a local file, rather than from GitHub Pages.
+
+### When no server is found
+
+The Network tile shows why and switches itself off, and the report lists Network as *not tested (no test server)*. Everything else works normally. This is the expected behavior for the page on GitHub Pages: it can't run PHP, so it can't host the network test.
+
+**Classrooms and labs:** on a local server, network testing never touches your internet connection. One gigabit server is shared by every device testing at the same time, though. For clean per-device speeds, run the network test on a few devices at a time.
 
 ## Tips and cautions
 
@@ -118,4 +152,4 @@ A **custom URL** can be set in ⚙ Settings, for latency and download testing ag
 ## Credits
 
 - **Code:** written by **Claude Opus 5.5 (Medium)**, Anthropic's AI model
-- **Concept, direction and testing:** [Mike Young](https://github.com/myoung8223)
+- **Concept, direction and testing:** [myoung8223](https://github.com/myoung8223)

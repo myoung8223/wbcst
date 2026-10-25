@@ -161,6 +161,7 @@ dialog h2{margin:0 0 10px;font-size:18px}
     <div class="th"><label><input type="checkbox" id="en-net" checked>Network</label><span class="dot" id="d-net"></span><span class="st" id="s-net">Idle</span></div>
     <div class="big"><span id="net-big">–</span><small>ms latency</small></div>
     <div class="stats"><span>Down</span><b id="net-dl">–</b><span>Up</span><b id="net-ul">–</b><span>Jitter</span><b id="net-jit">–</b><span>Failed</span><b id="net-loss">–</b><span>Server</span><b id="net-srv">–</b><span>Drops</span><b id="net-off">0</b></div>
+    <div class="dim" id="net-msg" style="font-size:12px"></div>
     <canvas class="spark" id="net-spark"></canvas>
   </section>
 
@@ -182,10 +183,10 @@ dialog h2{margin:0 0 10px;font-size:18px}
     <label for="cfg-disk">Storage test file</label>
     <select id="cfg-disk"><option value="64">64 MB</option><option value="128">128 MB</option><option value="256">256 MB</option><option value="512">512 MB</option></select>
     <label for="cfg-net">Network server</label>
-    <select id="cfg-net"><option value="auto">Auto (Cloudflare, then jsDelivr)</option><option value="cloudflare">Cloudflare speed test</option><option value="jsdelivr">jsDelivr CDN</option><option value="custom">Custom URL</option></select>
-    <label for="cfg-url">Custom URL</label>
-    <input type="text" id="cfg-url" placeholder="https://your-server/testfile.bin (must allow CORS)">
-    <div class="note">If the tab crashes during the RAM test, choose a lower RAM percentage. Each computer downloads about 5 MB every few seconds during the network test, so in a full lab you may want to turn Network off or use a local server.</div>
+    <select id="cfg-net"><option value="auto">Same server as this page (automatic)</option><option value="custom">Another server…</option></select>
+    <label for="cfg-url">Server address</label>
+    <input type="text" id="cfg-url" placeholder="http://192.168.1.50/wbcst/  (folder containing down.php and up.php)">
+    <div class="note">The network test needs <b>down.php</b> and <b>up.php</b> on a web server with PHP (see the README). Opened from that server, the page finds them automatically. If this page is opened over https://, the server must be https:// too.<br>If the tab crashes during the RAM test, choose a lower RAM percentage.</div>
   </div>
   <div class="btns"><button id="setCancel">Cancel</button><button id="setSave" class="primary">Save</button></div>
 </dialog>
@@ -397,37 +398,55 @@ $('gpuCanvas').addEventListener('webglcontextlost',e=>{e.preventDefault();GPU.ok
 $('gpuCanvas').addEventListener('webglcontextrestored',()=>{try{initGL();}catch(e){}});
 
 /* ---------- network ---------- */
-const NETP={
-  cloudflare:{name:'Cloudflare',ping:()=>'https://speed.cloudflare.com/__down?bytes=0&r='+rnd(),dl:()=>'https://speed.cloudflare.com/__down?bytes=5000000&r='+rnd(),ul:'https://speed.cloudflare.com/__up'},
-  jsdelivr:{name:'jsDelivr',ping:()=>'https://cdn.jsdelivr.net/npm/jquery@3.7.1/package.json?r='+rnd(),dl:()=>'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js?r='+rnd()}
-};
-const customProv=u=>{const j=u.includes('?')?'&':'?';return{name:'Custom',ping:()=>u+j+'r='+rnd(),dl:()=>u+j+'r='+rnd()};};
-let UPBUF=null;function upBuf(){if(!UPBUF){UPBUF=new Uint8Array(2*1048576);for(let i=0;i<UPBUF.length;i+=65536)crypto.getRandomValues(UPBUF.subarray(i,i+65536));}return UPBUF;}
+/* Uses the site's own down.php / up.php (see README). No third-party services. */
+const SRV={state:'checking',base:null,host:'',msg:''};
+if(!['auto','custom'].includes(CFG.net))CFG.net='auto';
+function srvBase(){
+  if(CFG.net==='custom'){let u=(CFG.netUrl||'').trim();if(!u)return null;if(!/^https?:\/\//i.test(u))u='http://'+u;u=u.replace(/(down|up)\.php.*$/i,'');return u.endsWith('/')?u:u+'/';}
+  return /^https?:$/.test(location.protocol)?new URL('./',location.href).href:null;
+}
+async function probeServer(){
+  SRV.state='checking';SRV.base=null;netTile();const b=srvBase();
+  const none=m=>{SRV.state='none';SRV.msg=m;netTile();};
+  if(!b)return none(CFG.net==='custom'?'No server address set in ⚙ Settings.':'No test server: opened as a local file. Set a server in ⚙ Settings.');
+  if(location.protocol==='https:'&&b.startsWith('http:'))return none('This page is on https:// but the server is http:// — the browser blocks that. Open the page from the server instead.');
+  try{const ac=new AbortController(),to=setTimeout(()=>ac.abort(),5000);
+    const r=await fetch(b+'down.php?bytes=1000&r='+rnd(),{cache:'no-store',signal:ac.signal}),len=(await r.arrayBuffer()).byteLength;clearTimeout(to);
+    if(r.ok&&len===1000){SRV.state='ok';SRV.base=b;SRV.host=new URL(b).host||'this server';netTile();return;}
+    none(CFG.net==='custom'?`${b}down.php didn't answer correctly — is PHP running there?`:'No test server here (needs down.php/up.php on a PHP server). Set one in ⚙ Settings.');
+  }catch(e){none(CFG.net==='custom'?`Couldn't reach ${b} — check the address and that it's online.`:'No test server here. Set one in ⚙ Settings.');}
+}
+function netTile(){ // reflect server availability on the Network tile (only when idle)
+  if(S&&S.running)return;const cb=$('en-net'),ok=SRV.state==='ok';
+  if(!ok){if(!cb.disabled)SRV.wasOn=cb.checked;cb.checked=false;cb.disabled=true;}
+  else if(cb.disabled){cb.disabled=false;cb.checked=SRV.wasOn!==false;}
+  $('t-net').classList.toggle('off',!cb.checked);live('net',cb.checked?'idle':'off');
+  txt('net-srv',ok?SRV.host:SRV.state==='checking'?'checking…':'none');
+  txt('net-msg',ok?'':SRV.state==='checking'?'Looking for a test server…':SRV.msg);
+}
+let UPBUF=null;function upBuf(n){if(!UPBUF){UPBUF=new Uint8Array(6*1048576);for(let i=0;i<UPBUF.length;i+=65536)crypto.getRandomValues(UPBUF.subarray(i,i+65536));}return UPBUF.subarray(0,n);}
 async function timedGet(url,timeout,st){
   const ac=new AbortController(),to=setTimeout(()=>ac.abort(),timeout);
   try{
     const t=performance.now(),r=await fetch(url,{cache:'no-store',signal:ac.signal});if(!r.ok)throw new Error('HTTP '+r.status);
     let bytes=0;const rd=r.body.getReader();
     for(;;){const{done,value}=await rd.read();if(done)break;bytes+=value.byteLength;if(st&&!st.running){ac.abort();break;}}
-    const ms=performance.now()-t,ent=performance.getEntriesByName(url).pop();performance.clearResourceTimings();
-    return{ms,bytes:ent&&ent.encodedBodySize>0?ent.encodedBodySize:bytes};
+    return{ms:performance.now()-t,bytes};
   }finally{clearTimeout(to);}
 }
-async function findProvider(st){
-  if(CFG.net==='custom'&&CFG.netUrl)return customProv(CFG.netUrl);
-  const keys=CFG.net==='auto'?['cloudflare','jsdelivr']:[CFG.net];
-  for(const k of keys){if(!st.running)return null;try{await timedGet(NETP[k].ping(),5000,st);return NETP[k];}catch(e){}}
-  return null;
-}
+const clampN=(v,lo,hi)=>Math.round(Math.max(lo,Math.min(hi,v)));
 async function netLoop(st){
-  const N=st.net;let p=null;
+  const N=st.net,b=SRV.base;N.provider=SRV.host;let dl=2e6,ul=1e6; // sizes adapt so each transfer takes ~1 s
   while(st.running){
-    if(!p){p=await findProvider(st);if(!st.running)break;if(!p){N.fail++;N.provider='unreachable';await sleep(3000);continue;}N.provider=p.name;}
-    for(let i=0;i<4&&st.running;i++){try{const r=await timedGet(p.ping(),5000,st);if(!st.running)break;N.lat.push(r.ms);N.ok++;}catch(e){if(st.running)N.fail++;}await sleep(400);}
+    for(let i=0;i<4&&st.running;i++){try{const r=await timedGet(b+'down.php?bytes=0&r='+rnd(),5000,st);if(!st.running)break;N.lat.push(r.ms);N.ok++;}catch(e){if(st.running)N.fail++;}await sleep(400);}
     if(!st.running)break;
-    try{const r=await timedGet(p.dl(),30000,st);if(st.running){if(r.bytes>100000)N.dl.push(r.bytes*8/(r.ms/1000)/1e6);N.ok++;}}catch(e){if(st.running)N.fail++;}
-    if(p.ul&&st.running){const ac=new AbortController(),to=setTimeout(()=>ac.abort(),30000);
-      try{const t=performance.now();await fetch(p.ul,{method:'POST',mode:'no-cors',body:upBuf(),cache:'no-store',signal:ac.signal});if(st.running){N.ul.push(upBuf().length*8/((performance.now()-t)/1000)/1e6);N.ok++;}}catch(e){if(st.running)N.fail++;}finally{clearTimeout(to);}}
+    try{const r=await timedGet(b+`down.php?bytes=${dl}&r=${rnd()}`,30000,st);
+      if(st.running){if(r.bytes!==dl)throw new Error('short');const bps=r.bytes/(r.ms/1000);N.dl.push(bps*8/1e6);N.ok++;dl=clampN(bps,1e6,50e6);}}catch(e){if(st.running)N.fail++;}
+    if(!st.running)break;
+    {const ac=new AbortController(),to=setTimeout(()=>ac.abort(),30000);
+      try{const t=performance.now(),r=await fetch(b+'up.php?r='+rnd(),{method:'POST',body:upBuf(ul),cache:'no-store',signal:ac.signal}),got=+(await r.text()),ms=performance.now()-t;
+        if(st.running){if(!r.ok||got!==ul){N.fail++;if(r.ok&&got<ul)N.ulShort=true;}else{const bps=ul/(ms/1000);N.ul.push(bps*8/1e6);N.ok++;ul=clampN(bps,1e6,6e6);}}}
+      catch(e){if(st.running)N.fail++;}finally{clearTimeout(to);}}
     await sleep(1000);
   }
 }
@@ -446,7 +465,7 @@ function newState(en){const now=performance.now();return{en,running:true,t0:now,
   gpu:{frames:0,hist:[],ctxLost:0,checks:0,mism:0,ref:null,raf:0,err:null},
   ram:{w:null,target:0,alloc:0,allocErr:null,bytes:0,hist:[],errs:0,pass:0,crashed:0,done:false},
   disk:{w:null,mode:'–',mb:0,passes:[],errs:0,err:null,live:0,phase:'',hist:[],maxW:0,stopped:false},
-  net:{provider:null,lat:[],dl:[],ul:[],ok:0,fail:0,offline:0},
+  net:{provider:null,lat:[],dl:[],ul:[],ok:0,fail:0,offline:0,ulShort:false},
   sys:{b:null,b0:null,jumps:0,bh:[],chargingAll:true,dischargingAll:true,pState:'n/a',pCount:{},lag:0,lagMax:0,hist:[],po:null,lagId:0}};}
 
 function startCPU(st){
@@ -537,8 +556,8 @@ function render(st,el){
     live('disk',d.errs?'bad':d.err?'warn':'run');spark('disk-spark',d.hist,'#f5b301');}
   if(st.en.net){const n=st.net,l20=n.lat.slice(-20),tot=n.ok+n.fail,loss=tot?n.fail/tot*100:0;
     txt('net-big',fmt(last(n.lat),0));txt('net-dl',n.dl.length?fmt(last(n.dl),1)+' Mbps':'–');txt('net-ul',n.ul.length?fmt(last(n.ul),1)+' Mbps':'–');
-    txt('net-jit',l20.length>2?fmt(sd(l20),0)+' ms':'–');txt('net-loss',tot?fmt(loss,1)+'%':'–');txt('net-srv',n.provider||'probing…');txt('net-off',n.offline);
-    live('net',n.offline||loss>10||n.provider==='unreachable'?'bad':loss>2?'warn':'run');spark('net-spark',n.lat,'#3fd0d0');}
+    txt('net-jit',l20.length>2?fmt(sd(l20),0)+' ms':'–');txt('net-loss',tot?fmt(loss,1)+'%':'–');txt('net-srv',n.provider||'–');txt('net-off',n.offline);
+    live('net',n.offline||loss>10?'bad':loss>2?'warn':'run');spark('net-spark',n.lat,'#3fd0d0');}
   const y=st.sys;
   txt('sys-big',y.b?fmt(y.b.level*100,0)+'%':'n/a');txt('sys-chg',y.b?(y.b.charging?'plugged in':'on battery'):'n/a');
   if(y.b&&y.b0&&!y.b.charging&&el>=300)txt('sys-drain',fmt((y.b0.level-y.b.level)*100/(el/3600),0)+'%/h');else txt('sys-drain',y.b&&!y.b.charging?'after 5 min':'–');
@@ -555,7 +574,7 @@ function resetTiles(st){
 }
 function setRunningUI(on){
   const b=$('startBtn');b.disabled=false;b.textContent=on?'Stop test':'Start test';b.classList.toggle('stop',on);
-  for(const k of KEYS)$('en-'+k).disabled=on;$('dur').disabled=on;$('setBtn').disabled=on;updRep();
+  for(const k of KEYS)$('en-'+k).disabled=on;if(!on)netTile();$('dur').disabled=on;$('setBtn').disabled=on;updRep();
   txt('hint',on?'Testing… keep this tab in front (background tabs get throttled). Press Stop at any time for the health report.':'Tips: close other tabs, keep this tab in front, and test for 10+ minutes so heat builds up. Unplug to measure battery drain; plug in to check the charger.');
 }
 function applyTileStatus(st,rep){
@@ -622,14 +641,15 @@ function assess(st){
     if(d.maxW>(opfs?2000:5000))f.push(F('warn',`Slowest single 1 MB write took ${fmt(d.maxW/1000,1)} s — storage stalls.`));
     R.comps.push(comp('disk','Storage',[['API',d.mode],['File',d.mb+' MB'],['Passes',P.length],['Avg write',P.length?fmt(avg(ws),0)+' MB/s':'–'],['Avg read*',P.length?fmt(avg(P.map(p=>p.r)),0)+' MB/s':'–'],['Slowest 1 MB write',P.length?fmt(d.maxW,0)+' ms':'–'],['Errors',d.errs]],f));}
   if(st.en.net){const n=st.net,f=[],tot=n.ok+n.fail,loss=tot?n.fail/tot*100:0,ml=median(n.lat),jit=sd(n.lat.slice(1));
-    if(!n.ok){f.push(F('bad','Could not reach any test server — offline, or the test sites are blocked by a web filter.'));}
+    if(!n.ok){f.push(F('bad',`Could not reach the test server (${n.provider}) — offline, or the connection is blocked.`));}
     else{
       if(n.offline)f.push(F('bad',`Connection dropped ${n.offline} time(s) during the test.`));
       f.push(loss>10?F('bad',`${fmt(loss,1)}% of ${tot} requests failed.`):loss>2?F('warn',`${fmt(loss,1)}% of ${tot} requests failed.`):F('ok',`${tot} requests, ${fmt(loss,1)}% failed.`));
       if(ml>150)f.push(F('warn',`High latency (median ${fmt(ml,0)} ms).`));
       if(jit>50)f.push(F('warn',`High jitter (${fmt(jit,0)} ms) — unstable Wi-Fi link.`));
       if(n.dl.length>=3&&sd(n.dl)/avg(n.dl)>0.6)f.push(F('warn','Download speed was very inconsistent — weak signal, interference, or congestion.'));
-      f.push(F('info','Results include the Wi-Fi and building network, not just this computer.'));
+      if(n.ulShort)f.push(F('warn','Some uploads were cut short by the server — check PHP post_max_size (needs at least 8M).'));
+      f.push(F('info','Results include the Wi-Fi and the network path to the test server, not just this computer.'));
     }
     R.comps.push(comp('net','Network',[['Server',n.provider||'–'],['Median latency',fmt(ml,0)+' ms'],['Jitter',fmt(jit,0)+' ms'],['Failed',fmt(loss,1)+'%'],['Avg down',n.dl.length?fmt(avg(n.dl),1)+' Mbps':'–'],['Avg up',n.ul.length?fmt(avg(n.ul),1)+' Mbps':'–'],['Drops',n.offline]],f));}
   {const y=st.sys,f=[],m=[];
@@ -662,7 +682,7 @@ function assess(st){
     else if(f.length)R.comps.push(comp('sys','System',m,f));
     const hp=st.sec?st.hiddenSec/st.sec:0;
     if(hp>0.1)R.notes.push(`The tab was in the background ${Math.round(hp*100)}% of the test, so GPU and timing results are less reliable.`);}
-  R.skipped=KEYS.filter(k=>!st.en[k]).map(k=>({cpu:'CPU',gpu:'GPU',ram:'RAM',disk:'Storage',net:'Network'})[k]);
+  R.skipped=KEYS.filter(k=>!st.en[k]).map(k=>k==='net'&&SRV.state!=='ok'?'Network (no test server)':({cpu:'CPU',gpu:'GPU',ram:'RAM',disk:'Storage',net:'Network'})[k]);
   R.graphs={};const GR=(k,d,label,col,ref)=>{R.graphs[k]={d,label,col,ref};};
   if(st.en.cpu)GR('cpu',st.cpu.hist,'CPU throughput over time (Mops/s)','#2f6fdf',base(st.cpu.hist));
   if(st.en.gpu)GR('gpu',st.gpu.hist,'Frame rate over time (FPS)','#8b4fe0',base(st.gpu.hist));
@@ -1094,9 +1114,9 @@ $('repPng').onclick=()=>saveVisual('png',$('repPng'));
 $('setBtn').onclick=()=>{$('cfg-gpu').value=CFG.gpu;$('cfg-ram').value=CFG.ramPct;$('cfg-disk').value=CFG.diskMB;$('cfg-net').value=CFG.net;$('cfg-url').value=CFG.netUrl;$('setDlg').showModal();};
 $('setCancel').onclick=()=>$('setDlg').close();
 $('setSave').onclick=()=>{CFG.gpu=$('cfg-gpu').value;CFG.ramPct=+$('cfg-ram').value;CFG.diskMB=+$('cfg-disk').value;CFG.net=$('cfg-net').value;CFG.netUrl=$('cfg-url').value.trim();
-  try{localStorage.setItem('cbstress-cfg',JSON.stringify(CFG));}catch(e){}txt('gpu-load',CFG.gpu);$('setDlg').close();};
+  try{localStorage.setItem('cbstress-cfg',JSON.stringify(CFG));}catch(e){}txt('gpu-load',CFG.gpu);$('setDlg').close();probeServer();};
 for(const k of KEYS)$('en-'+k).onchange=()=>{if(!(S&&S.running)){$('t-'+k).classList.toggle('off',!$('en-'+k).checked);live(k,$('en-'+k).checked?'idle':'off');}};
-devInfo();resetTiles(null);
+devInfo();resetTiles(null);probeServer();
 </script>
 </body>
 </html>
