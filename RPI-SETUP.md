@@ -163,7 +163,7 @@ curl -sI http://localhost/down.php | grep -i x-powered                          
 sudo apache2ctl -M | grep -E 'mpm|php|proxy_fcgi'                                  # mpm_event + proxy_fcgi, no php module
 ```
 
-Then from another computer on the network, open **`http://wbcst.local/`**. The Network tile should show `wbcst.local` as its server. If you skipped step 6, use `http://raspberrypi.local/` instead.
+Then from another computer on the network, open **`http://wbcst.local/`**, or use the GitHub Pages copy pointed at the Pi: `https://myoung8223.github.io/wbcst/?nts=wbcst`. The Network tile should show `wbcst.local` as its server. If you skipped step 6, use `http://raspberrypi.local/` instead.
 
 ## 9. Keep it patched automatically
 
@@ -226,15 +226,19 @@ Everything else works: the CPU, GPU, RAM, storage and network tests, the screen,
 
 Ways around it:
 
-1. **Managed Chromebooks (recommended).** In the Google Admin console, set the Chrome policy **OverrideSecurityRestrictionsOnInsecureOrigin**. Search the settings for "insecure origin". List the server's address(es), for example:
+1. **Open the tester from GitHub Pages and point it at the Pi (recommended).** Use an address like this:
+   ```
+   https://myoung8223.github.io/wbcst/?nts=wbcst&t=MGY
+   ```
+   The page comes over `https://`, so every feature works, and the network test runs against the Pi. Chrome asks once to allow *local network access*; choose **Allow**. On managed Chromebooks, an admin can skip the prompt with the Chrome policy **LocalNetworkAccessAllowedForUrls** set to `https://myoung8223.github.io`. Requires Chrome or Edge 142+, and the Pi needs no changes. See the README's *URL parameters* section for details.
+2. **Managed Chromebooks, opening the Pi directly.** In the Google Admin console, set the Chrome policy **OverrideSecurityRestrictionsOnInsecureOrigin**. Search the settings for "insecure origin". List the server's address(es), for example:
    ```
    http://wbcst.local
    http://192.168.1.50
    ```
    Chrome then treats those addresses like `https` sites, and every feature works. Nothing changes on the Pi.
-2. **A single unmanaged device.** Open `chrome://flags/#unsafely-treat-insecure-origin-as-secure`, enter the server address, enable it and relaunch Chrome. Managed devices usually block flags.
-3. **Serve over `https://`.** The simplest way is a self-signed certificate; see [Optional: HTTPS with a self-signed certificate](#optional-https-with-a-self-signed-certificate). Each device clicks past a warning once. A warning-free setup needs a certificate the devices already trust: one from an internal certificate authority, or a real domain name with a DNS-validated certificate.
-4. **Split use.** Run the peripheral and screen tests from the GitHub Pages copy (`https`), and the stress and network tests from the Pi.
+3. **A single unmanaged device.** Open `chrome://flags/#unsafely-treat-insecure-origin-as-secure`, enter the server address, enable it and relaunch Chrome. Managed devices usually block flags.
+4. **Serve over `https://`.** The simplest way is a self-signed certificate; see [Optional: HTTPS with a self-signed certificate](#optional-https-with-a-self-signed-certificate). Each device clicks past a warning once. A warning-free setup needs a certificate the devices already trust: one from an internal certificate authority, or a real domain name with a DNS-validated certificate.
 
 ## Watching network use live
 
