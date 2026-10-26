@@ -112,7 +112,7 @@ dialog h2{margin:0 0 10px;font-size:18px}
 </head>
 <body>
 <header>
-  <div><h1>Web Stress Test</h1><a class="repo" href="https://github.com/myoung8223/wbcst/" target="_blank" rel="noopener">GitHub repository</a><div id="devinfo" class="dim">Detecting hardware…</div></div>
+  <div><h1>Web Stress Test</h1><a class="repo" href="https://github.com/myoung8223/wbcst/" target="_blank" rel="noopener">GitHub repository</a><span class="pill" id="testerTag" hidden style="margin-left:8px;vertical-align:2px;text-transform:none"></span><div id="devinfo" class="dim">Detecting hardware…</div></div>
   <div class="spacer"></div>
   <div class="timer"><span id="elapsed">0:00</span><div class="bar"><i id="prog"></i></div></div>
   <select id="dur" title="Test length">
@@ -127,7 +127,7 @@ dialog h2{margin:0 0 10px;font-size:18px}
   <button id="perBtn" title="Test webcam, microphone, speakers, keyboard and touch">Peripherals</button>
   <button id="repBtn" disabled title="Health report for everything tested so far">Report</button>
 </header>
-<div id="secNote" class="hint" hidden>⚠ Opened over plain <b>http://</b>, so the browser blocks <b>screen wake lock, webcam, microphone, battery and thermal readings</b> (they need https://). The device may dim and lock during long tests. Fix: open the page over https:// or as a local file, or have your admin trust this address (see README).</div>
+<div id="secNote" class="hint" hidden>⚠ Opened over plain <b>http://</b>, so the browser blocks <b>screen wake lock, webcam, microphone, battery and thermal readings</b> (they need https://). The device may dim and lock during long tests. Easiest fix: <a id="secLink" class="repo" style="margin:0" href="#">open the https tester pointed at this server</a>. Other options are in the README.</div>
 <div id="hint" class="hint">Tips: close other tabs, keep this tab in front, and test for 10+ minutes so heat builds up. Unplug to measure battery drain; plug in to check the charger.</div>
 
 <main>
@@ -187,6 +187,8 @@ dialog h2{margin:0 0 10px;font-size:18px}
     <select id="cfg-disk"><option value="64">64 MB</option><option value="128">128 MB</option><option value="256">256 MB</option><option value="512">512 MB</option></select>
     <label for="cfg-net">Network server</label>
     <select id="cfg-net"><option value="auto">Same server as this page (automatic)</option><option value="custom">Another server…</option></select>
+    <label for="cfg-tester">Tester</label>
+    <input type="text" id="cfg-tester" maxlength="40" placeholder="Name or initials (shown on reports)">
     <label for="cfg-url">Server address</label>
     <input type="text" id="cfg-url" placeholder="http://192.168.1.50/wbcst/  (folder containing down.php and up.php)">
     <div class="note">The network test needs <b>down.php</b> and <b>up.php</b> on a web server with PHP (see the README). Opened from that server, the page finds them automatically. If this page is opened over https://, the server must be https:// too.<br>If the tab crashes during the RAM test, choose a lower RAM percentage.</div>
@@ -402,8 +404,19 @@ $('gpuCanvas').addEventListener('webglcontextrestored',()=>{try{initGL();}catch(
 
 /* ---------- network ---------- */
 /* Uses the site's own down.php / up.php (see README). No third-party services. */
-const SRV={state:'checking',base:null,host:'',msg:''};
+const SRV={state:'checking',base:null,host:'',msg:'',lna:false};
 if(!['auto','custom'].includes(CFG.net))CFG.net='auto';
+/* URL parameters: ?nts=<server>  network test server (bare name -> name.local), ?t=<name>  tester */
+const QP=new URLSearchParams(location.search);
+function ntsToUrl(v){v=String(v||'').trim();if(!v)return'';if(/^https?:\/\//i.test(v))return v;
+  const m=v.match(/^([^\/:]+)(.*)$/);if(!m)return'http://'+v;let h=m[1];
+  if(!h.includes('.')&&h.toLowerCase()!=='localhost')h+='.local';   // "wbcst" -> "wbcst.local"
+  return'http://'+h+m[2];}
+const cleanName=v=>String(v||'').replace(/[\u0000-\u001f<>"]/g,'').trim().slice(0,40);
+if(QP.get('nts')){CFG.net='custom';CFG.netUrl=ntsToUrl(QP.get('nts'));SRV.fromURL=true;}
+let TESTER=cleanName(QP.get('t')||CFG.tester||'');
+/* fetch options: an https page calling an http LAN server uses Chrome's Local Network Access exemption */
+const netOpts=o=>Object.assign({cache:'no-store'},o,SRV.lna?{targetAddressSpace:'local'}:{});
 function srvBase(){
   if(CFG.net==='custom'){let u=(CFG.netUrl||'').trim();if(!u)return null;if(!/^https?:\/\//i.test(u))u='http://'+u;u=u.replace(/(down|up)\.php.*$/i,'');return u.endsWith('/')?u:u+'/';}
   return /^https?:$/.test(location.protocol)?new URL('./',location.href).href:null;
@@ -412,12 +425,14 @@ async function probeServer(){
   SRV.state='checking';SRV.base=null;netTile();const b=srvBase();
   const none=m=>{SRV.state='none';SRV.msg=m;netTile();};
   if(!b)return none(CFG.net==='custom'?'No server address set in ⚙ Settings.':'No test server: opened as a local file. Set a server in ⚙ Settings.');
-  if(location.protocol==='https:'&&b.startsWith('http:'))return none('This page is on https:// but the server is http:// — the browser blocks that. Open the page from the server instead.');
-  try{const ac=new AbortController(),to=setTimeout(()=>ac.abort(),5000);
-    const r=await fetch(b+'down.php?bytes=1000&r='+rnd(),{cache:'no-store',signal:ac.signal}),len=(await r.arrayBuffer()).byteLength;clearTimeout(to);
+  SRV.lna=location.protocol==='https:'&&b.startsWith('http:');
+  if(SRV.lna)txt('net-msg','Connecting to '+new URL(b).host+'… if Chrome asks to connect to devices on your local network, choose Allow.');
+  try{const ac=new AbortController(),to=setTimeout(()=>ac.abort(),SRV.lna?60000:5000); // allow time to answer the permission prompt
+    const r=await fetch(b+'down.php?bytes=1000&r='+rnd(),netOpts({signal:ac.signal})),len=(await r.arrayBuffer()).byteLength;clearTimeout(to);
     if(r.ok&&len===1000){SRV.state='ok';SRV.base=b;SRV.host=new URL(b).host||'this server';netTile();return;}
-    none(CFG.net==='custom'?`${b}down.php didn't answer correctly — is PHP running there?`:'No test server here (needs down.php/up.php on a PHP server). Set one in ⚙ Settings.');
-  }catch(e){none(CFG.net==='custom'?`Couldn't reach ${b} — check the address and that it's online.`:'No test server here. Set one in ⚙ Settings.');}
+    none(CFG.net==='custom'?`${b}down.php didn't answer correctly — is PHP running there?`:'No test server here (needs down.php/up.php on a PHP server). Add ?nts=<server> to the address, or set one in ⚙ Settings.');
+  }catch(e){none(SRV.lna?`Couldn't reach ${b} from this https page. In Chrome, allow "local network" access for this site (lock icon → Site settings); other browsers don't allow it. Also check the server is online.`
+    :CFG.net==='custom'?`Couldn't reach ${b} — check the address and that it's online.`:'No test server here. Set one in ⚙ Settings, or add ?nts=<server> to the address.');}
 }
 function netTile(){ // reflect server availability on the Network tile (only when idle)
   if(S&&S.running)return;const cb=$('en-net'),ok=SRV.state==='ok';
@@ -425,13 +440,13 @@ function netTile(){ // reflect server availability on the Network tile (only whe
   else if(cb.disabled){cb.disabled=false;cb.checked=SRV.wasOn!==false;}
   $('t-net').classList.toggle('off',!cb.checked);live('net',cb.checked?'idle':'off');
   txt('net-srv',ok?SRV.host:SRV.state==='checking'?'checking…':'none');
-  txt('net-msg',ok?'':SRV.state==='checking'?'Looking for a test server…':SRV.msg);
+  if(SRV.state!=='checking'||!SRV.lna)txt('net-msg',ok?'':SRV.state==='checking'?'Looking for a test server…':SRV.msg);
 }
 let UPBUF=null;function upBuf(n){if(!UPBUF){UPBUF=new Uint8Array(6*1048576);for(let i=0;i<UPBUF.length;i+=65536)crypto.getRandomValues(UPBUF.subarray(i,i+65536));}return UPBUF.subarray(0,n);}
 async function timedGet(url,timeout,st){
   const ac=new AbortController(),to=setTimeout(()=>ac.abort(),timeout);
   try{
-    const t=performance.now(),r=await fetch(url,{cache:'no-store',signal:ac.signal});if(!r.ok)throw new Error('HTTP '+r.status);
+    const t=performance.now(),r=await fetch(url,netOpts({signal:ac.signal}));if(!r.ok)throw new Error('HTTP '+r.status);
     let bytes=0;const rd=r.body.getReader();
     for(;;){const{done,value}=await rd.read();if(done)break;bytes+=value.byteLength;if(st&&!st.running){ac.abort();break;}}
     return{ms:performance.now()-t,bytes};
@@ -447,7 +462,7 @@ async function netLoop(st){
       if(st.running){if(r.bytes!==dl)throw new Error('short');const bps=r.bytes/(r.ms/1000);N.dl.push(bps*8/1e6);N.ok++;dl=clampN(bps,1e6,50e6);}}catch(e){if(st.running)N.fail++;}
     if(!st.running)break;
     {const ac=new AbortController(),to=setTimeout(()=>ac.abort(),30000);
-      try{const t=performance.now(),r=await fetch(b+'up.php?r='+rnd(),{method:'POST',body:upBuf(ul),cache:'no-store',signal:ac.signal}),got=+(await r.text()),ms=performance.now()-t;
+      try{const t=performance.now(),r=await fetch(b+'up.php?r='+rnd(),netOpts({method:'POST',body:upBuf(ul),signal:ac.signal})),got=+(await r.text()),ms=performance.now()-t;
         if(st.running){if(!r.ok||got!==ul){N.fail++;if(r.ok&&got<ul)N.ulShort=true;}else{const bps=ul/(ms/1000);N.ul.push(bps*8/1e6);N.ok++;ul=clampN(bps,1e6,6e6);}}}
       catch(e){if(st.running)N.fail++;}finally{clearTimeout(to);}}
     await sleep(1000);
@@ -458,7 +473,8 @@ window.addEventListener('offline',()=>{if(S&&S.running)S.net.offline++;});
 /* ---------- run state ---------- */
 let S=null,LAST=null,wakeLock=null;
 /* Report base: the last stress run, or an empty shell so peripheral/screen results can be reported on their own */
-const repBase=()=>LAST||{date:new Date(),dur:0,reason:'none',comps:[],notes:[],graphs:{}};
+const repBase=()=>Object.assign(LAST||{date:new Date(),dur:0,reason:'none',comps:[],notes:[],graphs:{}},{tester:TESTER});
+function showTester(){const e=$('testerTag');e.hidden=!TESTER;e.textContent='Tester: '+TESTER;}
 const hasResults=()=>!!(LAST||periphComp());
 const runDesc=R=>R.reason==='none'?'Peripheral and screen checks only (no stress test run)':`${fmtTime(R.dur)} test, ended ${R.reason==='timer'?'by timer':'by user'}`;
 function updRep(){$('repBtn').disabled=!!(S&&S.running)||!hasResults();}
@@ -522,7 +538,7 @@ async function stop(reason){
   const b=$('startBtn');b.disabled=true;b.textContent='Finishing…';
   if(st.disk.w){st.disk.w.postMessage({cmd:'stop'});const t=performance.now();while(!st.disk.stopped&&performance.now()-t<4000)await sleep(100);st.disk.w.terminate();}
   setRunningUI(false);
-  LAST=assess(st);updRep();applyTileStatus(st,LAST);showReport(LAST);
+  LAST=assess(st);updRep();applyTileStatus(st,LAST);showReport(repBase());
 }
 
 /* ---------- per-second sampling + UI ---------- */
@@ -717,7 +733,7 @@ function summarize(R){ // stress results + any peripheral results
 function showReport(R0){
   const R=Object.assign({},R0,summarize(R0));
   const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-  let h=`<div class="verdict"><div class="score">${scoreTxt(R.score)}</div><div><span class="badge ${R.lvl}">${LBL[R.lvl]}</span> <b>${VERDICT[R.lvl]}</b><div class="dim">${runDesc(R)} · ${R.date.toLocaleString()}</div></div></div><div class="rgrid">`;
+  let h=`<div class="verdict"><div class="score">${scoreTxt(R.score)}</div><div><span class="badge ${R.lvl}">${LBL[R.lvl]}</span> <b>${VERDICT[R.lvl]}</b><div class="dim">${runDesc(R)} · ${R.date.toLocaleString()}${R.tester?' · Tester: '+esc(R.tester):''}</div></div></div><div class="rgrid">`;
   for(const c of R.comps){h+=`<div class="rc"><h3>${c.name} <span class="badge ${c.lvl}">${LBL[c.lvl]}</span><span class="sc">${c.score==null?'':c.score+'/100'}</span></h3><table>${c.metrics.map(([k,v])=>`<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('')}</table><ul>${c.findings.map(f=>`<li class="${f.l}">${esc(f.t)}</li>`).join('')}</ul></div>`;}
   h+=`</div>`;if(R.skipped.length)h+=`<div class="notes"><b>Not tested:</b> ${esc(R.skipped.join(', '))} (switched off for this run, not counted against the score).</div>`;
   h+=`<div class="notes">${R.notes.map(esc).join('<br>')}</div>`;
@@ -725,7 +741,7 @@ function showReport(R0){
 }
 function reportText(R0){
   const R=Object.assign({},R0,summarize(R0));
-  const L=['WEB STRESS TEST REPORT',`Date: ${R.date.toLocaleString()}`,`Test: ${runDesc(R)}`,
+  const L=['WEB STRESS TEST REPORT',`Date: ${R.date.toLocaleString()}`,`Test: ${runDesc(R)}`,...(R.tester?[`Tester: ${R.tester}`]:[]),
     `Device: ${DEV.os}, ${DEV.threads} threads, ${DEV.mem?(DEV.mem>=8?'8+':DEV.mem)+' GB':'?'} RAM, GPU: ${DEV.gpu}`,`Browser: ${DEV.ua}`,'',
     `OVERALL: ${LBL[R.lvl]}${R.score==null?'':' ('+R.score+'/100)'} - ${VERDICT[R.lvl]}`,...(R.skipped.length?[`Not tested: ${R.skipped.join(', ')} (switched off; not counted)`]:[]),''];
   for(const c of R.comps){L.push(`[${c.name}] ${LBL[c.lvl]}${c.score==null?'':' '+c.score+'/100'}`);c.metrics.forEach(([k,v])=>L.push(`  ${k}: ${v}`));c.findings.forEach(f=>L.push(`  - (${f.l}) ${f.t}`));L.push('');}
@@ -1034,7 +1050,7 @@ function bHeader(c,R,y,dry){
   const dev=`${DEV.os} · ${DEV.threads||'?'} CPU threads · ${DEV.mem?(DEV.mem>=8?'8+ GB':DEV.mem+' GB'):'unknown'} RAM · GPU: ${DEV.gpu}`;
   c.font=fnt(20,600);const dl=wrapText(c,dev,W-2*M);c.font=fnt(15);const ul=wrapText(c,'Browser: '+DEV.ua,W-2*M);
   if(!dry){c.fillStyle=RC.accent;c.fillRect(0,0,W,band);c.fillStyle='#fff';c.font=fnt(46,700);c.fillText('Web Stress Test Report',M,24);
-    c.font=fnt(21);c.globalAlpha=.9;c.fillText(`${R.date.toLocaleString()}  ·  ${runDesc(R)}`,M,84);c.globalAlpha=1;
+    c.font=fnt(21);c.globalAlpha=.9;c.fillText(`${R.date.toLocaleString()}  ·  ${runDesc(R)}${R.tester?'  ·  Tester: '+R.tester:''}`,M,84);c.globalAlpha=1;
     let yy=band+18;c.font=fnt(20,600);c.fillStyle=RC.text;dl.forEach(l=>{c.fillText(l,M,yy);yy+=27;});c.font=fnt(15);c.fillStyle=RC.dim;ul.forEach(l=>{c.fillText(l,M,yy);yy+=20;});}
   return band+18+dl.length*27+ul.length*20-y;
 }
@@ -1096,7 +1112,7 @@ function pdfFromJpegs(imgs){ // minimal PDF: one full-page JPEG per US Letter pa
   return new Blob(parts,{type:'application/pdf'});
 }
 const toBlob=(cv,t,q)=>new Promise((res,rej)=>cv.toBlob(b=>b?res(b):rej(new Error('image encoding failed')),t,q));
-function repName(ext,R){const d=R.date,p=n=>String(n).padStart(2,'0');return`stress-report-${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}.${ext}`;}
+function repName(ext,R){const d=R.date,p=n=>String(n).padStart(2,'0');const tg=(R.tester||'').replace(/[^A-Za-z0-9_-]+/g,'').slice(0,20);return`stress-report-${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${tg?'-'+tg:''}.${ext}`;}
 function dlBlob(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),10000);}
 async function saveVisual(kind,btn){
   const lbl=btn.textContent;btn.disabled=true;btn.textContent='Rendering…';
@@ -1115,13 +1131,13 @@ $('repCopy').onclick=()=>copyText(reportText(repBase()),$('repCopy'),'Copy repor
 $('repSave').onclick=()=>{const b=repBase();dlBlob(new Blob([reportText(b)],{type:'text/plain'}),repName('txt',b));};
 $('repPdf').onclick=()=>saveVisual('pdf',$('repPdf'));
 $('repPng').onclick=()=>saveVisual('png',$('repPng'));
-$('setBtn').onclick=()=>{$('cfg-gpu').value=CFG.gpu;$('cfg-ram').value=CFG.ramPct;$('cfg-disk').value=CFG.diskMB;$('cfg-net').value=CFG.net;$('cfg-url').value=CFG.netUrl;$('setDlg').showModal();};
+$('setBtn').onclick=()=>{$('cfg-gpu').value=CFG.gpu;$('cfg-ram').value=CFG.ramPct;$('cfg-disk').value=CFG.diskMB;$('cfg-net').value=CFG.net;$('cfg-url').value=CFG.netUrl;$('cfg-tester').value=TESTER;$('setDlg').showModal();};
 $('setCancel').onclick=()=>$('setDlg').close();
-$('setSave').onclick=()=>{CFG.gpu=$('cfg-gpu').value;CFG.ramPct=+$('cfg-ram').value;CFG.diskMB=+$('cfg-disk').value;CFG.net=$('cfg-net').value;CFG.netUrl=$('cfg-url').value.trim();
+$('setSave').onclick=()=>{CFG.gpu=$('cfg-gpu').value;CFG.ramPct=+$('cfg-ram').value;CFG.diskMB=+$('cfg-disk').value;CFG.net=$('cfg-net').value;CFG.netUrl=ntsToUrl($('cfg-url').value);TESTER=CFG.tester=cleanName($('cfg-tester').value);showTester();
   try{localStorage.setItem('cbstress-cfg',JSON.stringify(CFG));}catch(e){}txt('gpu-load',CFG.gpu);$('setDlg').close();probeServer();};
 for(const k of KEYS)$('en-'+k).onchange=()=>{if(!(S&&S.running)){$('t-'+k).classList.toggle('off',!$('en-'+k).checked);live(k,$('en-'+k).checked?'idle':'off');}};
-devInfo();resetTiles(null);probeServer();
-if(!window.isSecureContext){$('secNote').hidden=false;txt('camInfo','Unavailable over http:// (browser security rule). Use https:// or a local copy.');txt('micInfo','Unavailable over http:// (browser security rule). Use https:// or a local copy.');$('camBtn').disabled=$('micBtn').disabled=true;}
+devInfo();resetTiles(null);showTester();probeServer();
+if(!window.isSecureContext){$('secNote').hidden=false;{const pth=location.pathname.replace(/[^\/]*$/,''),nts=location.host+(pth==='/'?'':pth),q=new URLSearchParams({nts});if(TESTER)q.set('t',TESTER);$('secLink').href='https://myoung8223.github.io/wbcst/?'+q;}txt('camInfo','Unavailable over http:// (browser security rule). Use https:// or a local copy.');txt('micInfo','Unavailable over http:// (browser security rule). Use https:// or a local copy.');$('camBtn').disabled=$('micBtn').disabled=true;}
 </script>
 </body>
 </html>
