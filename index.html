@@ -318,13 +318,16 @@ function diskWorker(){
   const BLK=1<<20,W=BLK>>2,wb=new Uint32Array(W),rb=new Uint32Array(W);
   const seed=(b,p)=>Math.imul(b+1,0x9E3779B1)^Math.imul(p+1,0x85EBCA6B);
   const fill=(b,p)=>{const s=seed(b,p);for(let i=0;i<W;i++)wb[i]=s^Math.imul(i,0xC2B2AE35);};
-  const bad=(a,b,p)=>{if(!a||a.length!==W)return 1;const s=seed(b,p);for(let i=0;i<W;i++)if(a[i]!==((s^Math.imul(i,0xC2B2AE35))>>>0))return 1;return 0;};
+  const chk=(a,b,p)=>{if(!a||a.length!==W||p<0)return false;const s=seed(b,p);for(let i=0;i<W;i++)if(a[i]!==((s^Math.imul(i,0xC2B2AE35))>>>0))return false;return true;};
+  const older=(a,b,p)=>{for(let q=p-1;q>=0&&q>=p-500;q--)if(chk(a,b,q))return true;return false;}; // data from an earlier pass
+  const isZero=a=>{for(let i=0;i<a.length;i++)if(a[i])return false;return true;};
+  let lastN=0; // bytes actually read by the last read()
   const yieldNow=()=>new Promise(r=>setTimeout(r,0));
   async function opfs(){
     const root=await navigator.storage.getDirectory();
     for await(const name of root.keys())if(name.startsWith('cb-stress'))try{await root.removeEntry(name);}catch(e){}
     const fname='cb-stress-'+Date.now()+'.bin',fh=await root.getFileHandle(fname,{create:true}),h=await fh.createSyncAccessHandle();
-    return{name:'OPFS',write:b=>{h.write(wb,{at:b*BLK});},flush:()=>h.flush(),read:b=>{h.read(rb,{at:b*BLK});return rb;},
+    return{name:'OPFS',write:b=>h.write(wb,{at:b*BLK}),flush:()=>h.flush(),read:b=>{rb.fill(0);lastN=h.read(rb,{at:b*BLK});return rb;},
       close:async()=>{try{h.close();}catch(e){}try{await root.removeEntry(fname);}catch(e){}}};
   }
   async function idb(){
@@ -332,7 +335,7 @@ function diskWorker(){
     const db=await new Promise((res,rej)=>{const r=indexedDB.open(name,1);r.onupgradeneeded=()=>r.result.createObjectStore('b');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});
     const tx=(mode,fn)=>new Promise((res,rej)=>{const t=db.transaction('b',mode,{durability:'strict'});const q=fn(t.objectStore('b'));t.oncomplete=()=>res(q&&q.result);t.onerror=t.onabort=()=>rej(t.error);});
     return{name:'IndexedDB',write:b=>tx('readwrite',s=>s.put(wb.slice().buffer,b)),flush:()=>{},
-      read:async b=>{const r=await tx('readonly',s=>s.get(b));return r?new Uint32Array(r):null;},
+      read:async b=>{const r=await tx('readonly',s=>s.get(b));lastN=r?r.byteLength:0;return r?new Uint32Array(r):null;},
       close:async()=>{db.close();await new Promise(r=>{const d=indexedDB.deleteDatabase(name);d.onsuccess=d.onerror=d.onblocked=()=>r();});}};
   }
   onmessage=async e=>{
@@ -342,16 +345,19 @@ function diskWorker(){
     postMessage({type:'mode',mode:io.name});
     let p=0;
     while(!stop){
-      let wt=0,rt=0,errs=0,maxW=0,seg=0,segT=0;
-      for(let b=0;b<MB&&!stop;b++){fill(b,p);const t=performance.now();await io.write(b);const d=performance.now()-t;wt+=d;segT+=d;seg++;if(d>maxW)maxW=d;
+      let wt=0,rt=0,maxW=0,seg=0,segT=0;const E={corrupt:0,stale:0,empty:0,short:0,shortW:0,transient:0};
+      for(let b=0;b<MB&&!stop;b++){fill(b,p);const t=performance.now();const wn=await io.write(b);if(typeof wn==='number'&&wn!==BLK)E.shortW++;const d=performance.now()-t;wt+=d;segT+=d;seg++;if(d>maxW)maxW=d;
         if(seg===16){postMessage({type:'prog',phase:'write',mbps:seg/(Math.max(segT,0.05)/1000)});seg=0;segT=0;await yieldNow();}}
       if(stop)break;
       {const t=performance.now();await io.flush();wt+=performance.now()-t;}
       seg=0;segT=0;
-      for(let b=0;b<MB&&!stop;b++){const t=performance.now();const a=await io.read(b);const d=performance.now()-t;rt+=d;segT+=d;seg++;errs+=bad(a,b,p);
+      for(let b=0;b<MB&&!stop;b++){const t=performance.now();const a=await io.read(b);const d=performance.now()-t;rt+=d;segT+=d;seg++;
+        if(!(lastN===BLK&&chk(a,b,p))){ // mismatch: classify it, then re-read once
+          const kind=lastN!==BLK?'short':isZero(a)?'empty':older(a,b,p)?'stale':'corrupt';
+          const a2=await io.read(b);if(lastN===BLK&&chk(a2,b,p))E.transient++;else E[kind]++;}
         if(seg===16){postMessage({type:'prog',phase:'read',mbps:seg/(Math.max(segT,0.05)/1000)});seg=0;segT=0;await yieldNow();}}
       if(stop)break;
-      postMessage({type:'pass',p,w:MB/(Math.max(wt,1)/1000),r:MB/(Math.max(rt,1)/1000),errs,maxW});
+      postMessage({type:'pass',p,w:MB/(Math.max(wt,1)/1000),r:MB/(Math.max(rt,1)/1000),errs:E.corrupt+E.stale+E.empty+E.short,E,maxW});
       p++;
     }
     try{await io.close();}catch(e){}
@@ -483,7 +489,7 @@ function newState(en){const now=performance.now();return{en,running:true,t0:now,
   cpu:{workers:[],acc:[],errs:0,crashed:0,hist:[],n:0},
   gpu:{frames:0,hist:[],ctxLost:0,checks:0,mism:0,ref:null,raf:0,err:null},
   ram:{w:null,target:0,alloc:0,allocErr:null,bytes:0,hist:[],errs:0,pass:0,crashed:0,done:false},
-  disk:{w:null,mode:'–',mb:0,passes:[],errs:0,err:null,live:0,phase:'',hist:[],maxW:0,stopped:false},
+  disk:{w:null,mode:'–',mb:0,passes:[],errs:0,E:{corrupt:0,stale:0,empty:0,short:0,shortW:0,transient:0},err:null,live:0,phase:'',hist:[],maxW:0,stopped:false},
   net:{provider:null,lat:[],dl:[],ul:[],ok:0,fail:0,offline:0,ulShort:false},
   sys:{b:null,b0:null,jumps:0,bh:[],chargingAll:true,dischargingAll:true,pState:'n/a',pCount:{},lag:0,lagMax:0,hist:[],po:null,lagId:0}};}
 
@@ -504,7 +510,7 @@ async function startDisk(st){
   if(!st.running){d.stopped=true;return;}
   d.mb=mb;txt('disk-size',mb+' MB');
   const w=mkWorker(diskWorker);d.w=w;
-  w.onmessage=e=>{const m=e.data;if(m.type==='mode')d.mode=m.mode;else if(m.type==='prog'){d.live=m.mbps;d.phase=m.phase;}else if(m.type==='pass'){d.passes.push(m);d.errs+=m.errs;d.maxW=Math.max(d.maxW,m.maxW);}else if(m.type==='error')d.err=m.msg;else if(m.type==='stopped')d.stopped=true;};
+  w.onmessage=e=>{const m=e.data;if(m.type==='mode')d.mode=m.mode;else if(m.type==='prog'){d.live=m.mbps;d.phase=m.phase;}else if(m.type==='pass'){d.passes.push(m);d.errs+=m.errs;for(const k in m.E)d.E[k]+=m.E[k];d.maxW=Math.max(d.maxW,m.maxW);}else if(m.type==='error')d.err=m.msg;else if(m.type==='stopped')d.stopped=true;};
   w.onerror=e=>{d.err='Storage worker crashed '+(e.message||'');d.stopped=true;};
   w.postMessage({cmd:'start',mb});
 }
@@ -572,7 +578,7 @@ function render(st,el){
   if(st.en.disk){const d=st.disk,lp=d.passes[d.passes.length-1];
     txt('disk-big',d.phase==='write'?fmt(d.live,0):lp?fmt(lp.w,0):'–');txt('disk-read',lp?fmt(lp.r,0)+' MB/s':d.phase==='read'?fmt(d.live,0)+' MB/s':'–');
     txt('disk-phase',d.err?'error':d.phase||'starting');txt('disk-pass',d.passes.length);txt('disk-err',d.errs);txt('disk-mode',d.mode);
-    live('disk',d.errs?'bad':d.err?'warn':'run');spark('disk-spark',d.hist,'#f5b301');}
+    live('disk',d.E.corrupt?'bad':d.errs||d.err?'warn':'run');spark('disk-spark',d.hist,'#f5b301');}
   if(st.en.net){const n=st.net,l20=n.lat.slice(-20),tot=n.ok+n.fail,loss=tot?n.fail/tot*100:0;
     txt('net-big',fmt(last(n.lat),0));txt('net-dl',n.dl.length?fmt(last(n.dl),1)+' Mbps':'–');txt('net-ul',n.ul.length?fmt(last(n.ul),1)+' Mbps':'–');
     txt('net-jit',l20.length>2?fmt(sd(l20),0)+' ms':'–');txt('net-loss',tot?fmt(loss,1)+'%':'–');txt('net-srv',n.provider||'–');txt('net-off',n.offline);
@@ -652,13 +658,16 @@ function assess(st){
     R.comps.push(comp('ram','RAM',[['Tested',fmt(r.alloc)+' MB'],['Target',fmt(r.target)+' MB'],['Bandwidth',ps?fmt(ps.mean,0)+' MB/s':'–'],['Passes',r.pass],['Errors',r.errs]],f));}
   if(st.en.disk){const d=st.disk,P=d.passes,f=[],ws=P.map(p=>p.w),opfs=d.mode==='OPFS';
     if(d.err)f.push(F('warn','Storage test problem: '+d.err));
-    if(d.errs)f.push(F('bad',`${d.errs} block(s) read back differently than written — possible failing storage.`));
-    else if(P.length)f.push(F('ok',`${P.length} write/read/verify pass(es) of ${d.mb} MB with no errors.`));
-    else if(!d.err)f.push(F('warn','No complete storage pass finished — run longer or choose a smaller file in Settings.'));
+    const E=d.E,quirk=E.stale+E.empty+E.short+E.shortW;
+    if(E.corrupt)f.push(F('bad',`${E.corrupt} block(s) came back with scrambled data, even when read a second time — possible failing storage (or faulty RAM). Confirm with the OS's own disk check.`));
+    if(quirk)f.push(F('warn',`${quirk} block(s) returned old, empty or incomplete data instead of what was just written (old ${E.stale}, empty ${E.empty}, short reads ${E.short}, short writes ${E.shortW}). That pattern usually points to the browser's storage layer, not the drive. Re-run with only Storage enabled and one tab open, and confirm with the OS's own disk check.`));
+    if(E.transient)f.push(F(E.transient>3?'warn':'info',`${E.transient} block(s) read wrong once but correctly on retry — intermittent read errors.`));
+    if(!d.errs&&!quirk&&P.length)f.push(F('ok',`${P.length} write/read/verify pass(es) of ${d.mb} MB with no errors.`));
+    if(!P.length&&!d.err)f.push(F(dur<60?'info':'warn','No complete storage pass finished — run longer or choose a smaller file in Settings.'));
     if(P.length&&opfs&&avg(ws)<10)f.push(F('warn',`Slow sustained writes (${fmt(avg(ws),1)} MB/s) — storage may be worn or nearly full.`));
     if(P.length>=3){const a=ws[0],z=avg(ws.slice(-2));if(z<a*0.5)f.push(F('warn',`Write speed fell to ${Math.round(z/a*100)}% of the first pass — storage slows under sustained load.`));}
     if(d.maxW>(opfs?2000:5000))f.push(F('warn',`Slowest single 1 MB write took ${fmt(d.maxW/1000,1)} s — storage stalls.`));
-    R.comps.push(comp('disk','Storage',[['API',d.mode],['File',d.mb+' MB'],['Passes',P.length],['Avg write',P.length?fmt(avg(ws),0)+' MB/s':'–'],['Avg read*',P.length?fmt(avg(P.map(p=>p.r)),0)+' MB/s':'–'],['Slowest 1 MB write',P.length?fmt(d.maxW,0)+' ms':'–'],['Errors',d.errs]],f));}
+    R.comps.push(comp('disk','Storage',[['API',d.mode],['File',d.mb+' MB'],['Passes',P.length],['Avg write',P.length?fmt(avg(ws),0)+' MB/s':'–'],['Avg read*',P.length?fmt(avg(P.map(p=>p.r)),0)+' MB/s':'–'],['Slowest 1 MB write',P.length?fmt(d.maxW,0)+' ms':'–'],['Bad blocks',d.errs?`${d.errs} (scrambled ${d.E.corrupt})`:'0']],f));}
   if(st.en.net){const n=st.net,f=[],tot=n.ok+n.fail,loss=tot?n.fail/tot*100:0,ml=median(n.lat),jit=sd(n.lat.slice(1));
     if(!n.ok){f.push(F('bad',`Could not reach the test server (${n.provider}) — offline, or the connection is blocked.`));}
     else{
