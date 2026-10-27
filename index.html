@@ -981,12 +981,12 @@ const SCRP=[
 ];
 const SCR={on:false,end:false,i:0,flags:new Set(),hintT:0};
 function scrSize(){const dpr=devicePixelRatio||1,w=innerWidth,h=innerHeight;scrCv.width=Math.round(w*dpr);scrCv.height=Math.round(h*dpr);scrCv.style.width=w+'px';scrCv.style.height=h+'px';}
-function scrHint(){const h=$('scrHint');h.classList.remove('hide');$('scr').classList.add('cur');clearTimeout(SCR.hintT);
-  SCR.hintT=setTimeout(()=>{h.classList.add('hide');$('scr').classList.remove('cur');},3000);}
+function scrHint(ms){const h=$('scrHint');h.classList.remove('hide');$('scr').classList.add('cur');clearTimeout(SCR.hintT);
+  SCR.hintT=setTimeout(()=>{h.classList.add('hide');$('scr').classList.remove('cur');},ms||1000);} // 1 s by default; move the mouse to show it again
 function scrDraw(){
   if(SCR.end)return;scrSize();const[name,tip,fn,kind]=SCRP[SCR.i];fn(scrCv.getContext('2d'));
   const keys=kind==='touch'?(HAS_TOUCH?'Pause to show the Done button · → or mouse click skips · Esc exit':'Click or → finish · ← back · Esc exit'):'Click or → next · ← or right-click back · F flag a defect · Esc exit';
-  $('scrHint').innerHTML=`<b>${SCR.i+1}/${SCRP.length} · ${name}</b>${SCR.flags.has(name)?' · <b>⚑ defect flagged</b>':''}<br>${tip}<br><span style="opacity:.75">${keys}</span>`;scrHint();}
+  $('scrHint').innerHTML=`<b>${SCR.i+1}/${SCRP.length} · ${name}</b>${SCR.flags.has(name)?' · <b>⚑ defect flagged</b>':''}<br>${tip}<br><span style="opacity:.75">${keys}</span>`;const left=SCR.firstUntil-performance.now();scrHint(SCR.i===0&&left>1000?left:1000);}
 function scrGo(i){
   tsRecord();$('tsDone').hidden=true;
   if(i<0)i=0;
@@ -998,7 +998,8 @@ function scrGo(i){
   SCR.end=false;$('scrEnd').hidden=true;SCR.i=i;scrDraw();}
 function scrInfo(){const dpr=devicePixelRatio||1;return`${Math.round(screen.width*dpr)}×${Math.round(screen.height*dpr)} px panel (${fmt(dpr,2)}× scaling)`+(SCR.flags.size?`, defects flagged on ${[...SCR.flags].join(', ')}`:', no defects flagged');}
 async function scrOpen(){
-  SCR.on=true;SCR.flags.clear();$('scr').hidden=false;scrGo(0);
+  SCR.on=true;SCR.firstUntil=performance.now()+3000;SCR.flags.clear(); // first bubble stays ~3 s to teach the controls
+  $('scr').hidden=false;scrGo(0);
   try{if(!document.fullscreenElement)await $('scr').requestFullscreen({navigationUI:'hide'});}catch(e){}
   if(SCR.on&&!SCR.end)scrDraw(); // redraw at fullscreen size
 }
