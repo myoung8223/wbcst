@@ -59,13 +59,13 @@ If the permission was denied, re-enable it from the lock icon next to the addres
 
 | Component | How it's tested | What it can catch |
 |---|---|---|
-| **CPU** | One worker thread per CPU thread runs integer and floating-point math. Every result is checked against a known answer. | Calculation errors (instability), thermal throttling, UI freezes. In Chrome it also reports thermal pressure. |
+| **CPU** | Worker threads run integer and floating-point math on all CPU threads but one (left free so the browser stays responsive). Every result is checked against a known answer. | Calculation errors (instability), heavy thermal throttling, long UI freezes. In Chrome it also reports CPU pressure. |
 | **GPU** | A heavy WebGL shader renders continuously. Every 10 s a fixed frame is rendered and its pixels are compared to the first one. | Frame-rate drop-off (throttling), GPU/driver resets, inconsistent output |
 | **RAM** | Allocates a share of memory (25% by default) and repeatedly writes and verifies patterns, like a mini memtest. | Memory errors, allocation failures, bandwidth drop-off |
 | **Storage** | Writes, flushes, reads back and verifies a test file (256 MB by default) using the browser's private file system (OPFS), falling back to IndexedDB. The file is deleted afterward. | Data corruption, slow or stalling writes, slowdown over time |
 | **Network** | Times latency, download and upload against your own server's `down.php` and `up.php`, and verifies every transfer arrived complete. Only available when a test server is found (see below). | Failed requests, high latency/jitter, connection drops, inconsistent speeds |
 
-Throttling is judged against the device's own first minute. Fanless devices throttle more by design, so the best comparison is a known-good unit of the same model.
+Throttling is judged against the device's own first minute. Thin and fanless devices normally settle at 60–80% of their starting speed under sustained load, so that range isn't penalized; only heavier drops are (below 60% warns, below 40% fails). The best comparison is still a known-good unit of the same model.
 
 ### Power & thermal monitor
 
@@ -77,7 +77,7 @@ The **Power & thermal** tile isn't a test that can be switched off. It's a passi
 
 ### Scoring
 
-Each component starts at 100. A warning costs 15 points and a failure costs 45. The overall score is the average of the components that were tested.
+The score reflects **faults, not speed**: a slow but healthy machine should score 100 and simply show lower numbers. Each component starts at 100. A warning costs 15 points and a failure costs 45. The overall score is the average of the components that were tested.
 
 - **NOT TESTED**: components switched off, and peripherals never checked. Not counted against the score.
 - **UNDETERMINED**: peripherals that were exercised but not marked Pass or Fail. Not counted against the score.
@@ -86,7 +86,7 @@ Each component starts at 100. A warning costs 15 points and a failure costs 45. 
 
 **Peripherals** opens an overlay. Each item is marked Pass or Fail by you, and the results are added to the report.
 
-- **Webcam**: live preview with resolution and frame rate. It warns if the image is nearly black, which usually means a privacy shutter.
+- **Webcam**: live preview with resolution and frame rate. It warns if the image is nearly black, which usually means a privacy shutter. Starting the camera opens a full-window view automatically (reopen it with **Inspect** or by clicking the preview), with a **1:1 pixels** mode that shows the camera's real pixels unscaled, best for spotting dead pixels, dust and banding. Drag to pan; Pass/Fail are right there; Esc returns.
 - **Microphone**: level meter, plus a 3-second record and playback.
 - **Speakers**: left / both / right tones and a 100 Hz–10 kHz sweep.
 - **Keyboard**: an on-screen layout that lights up as keys are pressed.

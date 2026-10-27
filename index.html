@@ -71,6 +71,17 @@ dialog h2{margin:0 0 10px;font-size:18px}
 .notes{font-size:12px;color:var(--dim);margin-top:8px}
 #perDlg{width:97vw;height:95vh;max-width:none;max-height:none;padding:12px;overflow:hidden}
 #perDlg[open]{display:flex;flex-direction:column;gap:8px}
+#camVid{cursor:zoom-in}
+#camOv{position:fixed;inset:0;z-index:20;background:#000;display:flex;flex-direction:column}
+#camOv[hidden]{display:none}
+#camOvBar{display:flex;gap:8px;align-items:center;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
+#camOvBar button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+#camOvPass.on{background:var(--ok);border-color:var(--ok);color:#111}
+#camOvFail.on{background:var(--bad);border-color:var(--bad);color:#fff}
+#camOvView{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;overflow:hidden}
+#camOvVid{width:100%;height:100%;object-fit:contain;display:block}
+#camOvView.one{display:block;overflow:auto;cursor:grab}
+#camOvView.one #camOvVid{object-fit:fill;margin:0 auto}
 .pgrid{flex:1;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:minmax(0,1fr) minmax(0,1.15fr);gap:8px;min-height:0}
 .pp{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:8px 10px;display:flex;flex-direction:column;gap:6px;min-height:0;min-width:0;overflow:hidden}
 .pf{margin-left:auto;display:flex;gap:4px;font-weight:400}
@@ -134,7 +145,7 @@ dialog h2{margin:0 0 10px;font-size:18px}
   <section class="tile" id="t-cpu">
     <div class="th"><label><input type="checkbox" id="en-cpu" checked>CPU</label><span class="dot" id="d-cpu"></span><span class="st" id="s-cpu">Idle</span></div>
     <div class="big"><span id="cpu-big">–</span><small>Mops/s</small></div>
-    <div class="stats"><span>Threads</span><b id="cpu-thr">–</b><span>Initial</span><b id="cpu-base">–</b><span>vs initial</span><b id="cpu-pct">–</b><span>Errors</span><b id="cpu-err">0</b></div>
+    <div class="stats"><span>Workers</span><b id="cpu-thr">–</b><span>Initial</span><b id="cpu-base">–</b><span>vs initial</span><b id="cpu-pct">–</b><span>Errors</span><b id="cpu-err">0</b></div>
     <canvas class="spark" id="cpu-spark"></canvas>
   </section>
 
@@ -155,8 +166,8 @@ dialog h2{margin:0 0 10px;font-size:18px}
 
   <section class="tile" id="t-disk">
     <div class="th"><label><input type="checkbox" id="en-disk" checked>Storage</label><span class="dot" id="d-disk"></span><span class="st" id="s-disk">Idle</span></div>
-    <div class="big"><span id="disk-big">–</span><small>MB/s write</small></div>
-    <div class="stats"><span>Read</span><b id="disk-read">–</b><span>Phase</span><b id="disk-phase">–</b><span>Passes</span><b id="disk-pass">0</b><span>Errors</span><b id="disk-err">0</b><span>API</span><b id="disk-mode">–</b><span>File</span><b id="disk-size">–</b></div>
+    <div class="big"><span id="disk-big">–</span><small style="color:#f5b301">MB/s write</small><span id="disk-read" style="margin-left:18px">–</span><small style="color:#7aa7ff">MB/s read</small></div>
+    <div class="stats"><span>Phase</span><b id="disk-phase">–</b><span>Passes</span><b id="disk-pass">0</b><span>Errors</span><b id="disk-err">0</b><span>API</span><b id="disk-mode">–</b><span>File</span><b id="disk-size">–</b></div>
     <canvas class="spark" id="disk-spark"></canvas>
   </section>
 
@@ -198,10 +209,17 @@ dialog h2{margin:0 0 10px;font-size:18px}
 
 <dialog id="perDlg">
   <div class="th"><h2 style="margin:0">Peripherals</h2><span class="dim" style="font-weight:400">Check each item, then mark it Pass or Fail. Results are added to the report.</span><span class="spacer"></span><button id="perCopy">Copy results</button><button id="perClose" class="primary">Done</button></div>
+  <div id="camOv" hidden>
+    <div id="camOvBar"><b>Webcam inspection</b><span class="dim" id="camOvInfo"></span><span class="spacer"></span>
+      <button id="camOvFit" class="on">Fit</button><button id="camOv11" title="Real camera pixels, no scaling: best for dead pixels and dust. Drag to pan.">1:1 pixels</button>
+      <span style="margin-left:6px;display:flex;gap:4px"><button id="camOvPass">Pass</button><button id="camOvFail">Fail</button></span>
+      <button id="camOvBack" class="primary">Back</button></div>
+    <div id="camOvView"><video id="camOvVid" muted playsinline></video></div>
+  </div>
   <div class="pgrid">
     <section class="pp"><div class="th">Webcam<span class="pf" data-k="cam"></span></div>
-      <div class="prow"><select id="camSel"><option value="">Default camera</option></select><button id="camBtn">Start</button></div>
-      <video id="camVid" muted playsinline></video>
+      <div class="prow"><select id="camSel"><option value="">Default camera</option></select><button id="camBtn">Start</button><button id="camInspect" disabled title="Full-window view for spotting dead pixels, dust and banding">Inspect ⤢</button></div>
+      <video id="camVid" muted playsinline title="Click to inspect full-window"></video>
       <div class="dim" id="camInfo">Not started.</div></section>
     <section class="pp"><div class="th">Microphone<span class="pf" data-k="mic"></span></div>
       <div class="prow"><select id="micSel"><option value="">Default microphone</option></select><button id="micBtn">Start</button></div>
@@ -243,7 +261,7 @@ dialog h2{margin:0 0 10px;font-size:18px}
 
 <script>
 'use strict';
-const BUILD=16; // increment with every release
+const BUILD=17; // increment with every release
 /* ---------- helpers ---------- */
 const $=id=>document.getElementById(id);
 const txt=(id,v)=>{const e=$(id);if(e)e.textContent=v;};
@@ -277,17 +295,19 @@ async function devInfo(){
 }
 
 /* ---------- sparkline ---------- */
-function spark(id,data,color,ref){
+function spark(id,data,color,ref,data2,color2,names){
   const c=$(id);if(!c)return;const dpr=window.devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;if(!w||!h)return;
   const W=Math.round(w*dpr),H=Math.round(h*dpr);if(c.width!==W||c.height!==H){c.width=W;c.height=H;}
   const x=c.getContext('2d');x.setTransform(dpr,0,0,dpr,0,0);x.clearRect(0,0,w,h);
-  const n=Math.max(60,Math.floor(w/2)),d=data.slice(-n),v=valid(d);if(v.length<2)return;
-  const max=Math.max(...v,ref||0)*1.12||1,step=w/(n-1),off=n-d.length;
+  const n=Math.max(60,Math.floor(w/2)),d=data.slice(-n),d2=data2?data2.slice(-n):[],v=valid(d),v2=valid(d2);if(v.length<2&&v2.length<2)return;
+  const max=Math.max(...v,...v2,ref||0)*1.12||1,step=w/(n-1),off=n-d.length;
   const Y=val=>h-2-(val/max)*(h-6);
   if(ref){x.strokeStyle='rgba(139,147,165,.5)';x.setLineDash([4,4]);x.beginPath();x.moveTo(0,Y(ref));x.lineTo(w,Y(ref));x.stroke();x.setLineDash([]);}
-  x.strokeStyle=color;x.lineWidth=1.6;x.beginPath();let on=false;
-  d.forEach((val,i)=>{if(val==null||!isFinite(val)){on=false;return;}const px=(i+off)*step,py=Y(val);if(on)x.lineTo(px,py);else{x.moveTo(px,py);on=true;}});
-  x.stroke();x.fillStyle='rgba(139,147,165,.9)';x.font='10px system-ui';x.fillText('max '+fmt(max/1.12,0),3,10);
+  const line=(arr,col,o)=>{x.strokeStyle=col;x.lineWidth=1.6;x.beginPath();let on=false;
+    arr.forEach((val,i)=>{if(val==null||!isFinite(val)){on=false;return;}const px=(i+o)*step,py=Y(val);if(on)x.lineTo(px,py);else{x.moveTo(px,py);on=true;}});x.stroke();};
+  if(d2.length)line(d2,color2,n-d2.length);line(d,color,off);
+  x.fillStyle='rgba(139,147,165,.9)';x.font='10px system-ui';x.fillText('max '+fmt(max/1.12,0),3,10);
+  if(names){x.textAlign='right';x.fillStyle=color2;x.fillText(names[1],w-3,10);const rw=x.measureText(names[1]).width;x.fillStyle=color;x.fillText(names[0]+'  ',w-3-rw,10);x.textAlign='left';}
 }
 
 /* ---------- workers (self-contained; serialized to Blob URLs) ---------- */
@@ -335,7 +355,7 @@ function diskWorker(){
     const name='cb-stress';
     const db=await new Promise((res,rej)=>{const r=indexedDB.open(name,1);r.onupgradeneeded=()=>r.result.createObjectStore('b');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});
     const tx=(mode,fn)=>new Promise((res,rej)=>{const t=db.transaction('b',mode,{durability:'strict'});const q=fn(t.objectStore('b'));t.oncomplete=()=>res(q&&q.result);t.onerror=t.onabort=()=>rej(t.error);});
-    return{name:'IndexedDB',write:b=>tx('readwrite',s=>s.put(wb.slice().buffer,b)),flush:()=>{},
+    return{name:'IndexedDB',write:async b=>{await tx('readwrite',s=>s.put(wb.slice().buffer,b));return BLK;},flush:()=>{},
       read:async b=>{const r=await tx('readonly',s=>s.get(b));lastN=r?r.byteLength:0;return r?new Uint32Array(r):null;},
       close:async()=>{db.close();await new Promise(r=>{const d=indexedDB.deleteDatabase(name);d.onsuccess=d.onerror=d.onblocked=()=>r();});}};
   }
@@ -490,12 +510,12 @@ function newState(en){const now=performance.now();return{en,running:true,t0:now,
   cpu:{workers:[],acc:[],errs:0,crashed:0,hist:[],n:0},
   gpu:{frames:0,hist:[],ctxLost:0,checks:0,mism:0,ref:null,raf:0,err:null},
   ram:{w:null,target:0,alloc:0,allocErr:null,bytes:0,hist:[],errs:0,pass:0,crashed:0,done:false},
-  disk:{w:null,mode:'–',mb:0,passes:[],errs:0,E:{corrupt:0,stale:0,empty:0,short:0,shortW:0,transient:0},err:null,live:0,phase:'',hist:[],maxW:0,stopped:false},
+  disk:{w:null,mode:'–',mb:0,passes:[],errs:0,E:{corrupt:0,stale:0,empty:0,short:0,shortW:0,transient:0},err:null,live:0,phase:'',hist:[],rhist:[],lastW:null,lastR:null,maxW:0,stopped:false},
   net:{provider:null,lat:[],dl:[],ul:[],ok:0,fail:0,offline:0,ulShort:false},
   sys:{b:null,b0:null,jumps:0,bh:[],chargingAll:true,dischargingAll:true,pState:'n/a',pCount:{},lag:0,lagMax:0,hist:[],po:null,lagId:0}};}
 
 function startCPU(st){
-  const n=DEV.threads||4;st.cpu.n=n;st.cpu.acc=new Array(n).fill(0);
+  const t=DEV.threads||4,n=Math.max(1,t-1);st.cpu.n=n;st.cpu.t=t;st.cpu.acc=new Array(n).fill(0); // leave one thread free so the browser stays responsive
   for(let i=0;i<n;i++){const w=mkWorker(cpuWorker);w.onmessage=e=>{st.cpu.acc[i]+=e.data.ops;st.cpu.errs+=e.data.errs;};w.onerror=()=>{st.cpu.crashed++;};w.postMessage(i);st.cpu.workers.push(w);}
 }
 function startGPU(st){try{if(!GPU.gl)initGL();}catch(e){st.gpu.err=String(e.message||e);return;}st.gpu.raf=requestAnimationFrame(()=>gpuFrame(st));}
@@ -511,7 +531,7 @@ async function startDisk(st){
   if(!st.running){d.stopped=true;return;}
   d.mb=mb;txt('disk-size',mb+' MB');
   const w=mkWorker(diskWorker);d.w=w;
-  w.onmessage=e=>{const m=e.data;if(m.type==='mode')d.mode=m.mode;else if(m.type==='prog'){d.live=m.mbps;d.phase=m.phase;}else if(m.type==='pass'){d.passes.push(m);d.errs+=m.errs;for(const k in m.E)d.E[k]+=m.E[k];d.maxW=Math.max(d.maxW,m.maxW);}else if(m.type==='error')d.err=m.msg;else if(m.type==='stopped')d.stopped=true;};
+  w.onmessage=e=>{const m=e.data;if(m.type==='mode')d.mode=m.mode;else if(m.type==='prog'){d.live=m.mbps;d.phase=m.phase;if(m.phase==='write')d.lastW=m.mbps;else d.lastR=m.mbps;}else if(m.type==='pass'){d.passes.push(m);d.errs+=m.errs;for(const k in m.E)d.E[k]+=m.E[k];d.maxW=Math.max(d.maxW,m.maxW);}else if(m.type==='error')d.err=m.msg;else if(m.type==='stopped')d.stopped=true;};
   w.onerror=e=>{d.err='Storage worker crashed '+(e.message||'');d.stopped=true;};
   w.postMessage({cmd:'start',mb});
 }
@@ -557,7 +577,7 @@ function tick(st){
   if(st.en.cpu){const c=st.cpu,tot=c.acc.reduce((a,b)=>a+b,0);c.acc.fill(0);c.hist.push(tot/1e6/dt);}
   if(st.en.gpu){const g=st.gpu;g.hist.push(hidden||!GPU.ok||g.err?null:g.frames/dt);g.frames=0;if(!hidden&&!g.err&&st.sec%10===5)gpuCheck(st);}
   if(st.en.ram){const r=st.ram;r.hist.push(r.done?r.bytes/1048576/dt:null);r.bytes=0;}
-  if(st.en.disk){const d=st.disk;d.hist.push(d.phase==='write'?d.live:null);}
+  if(st.en.disk){const d=st.disk;d.hist.push(d.lastW);d.rhist.push(d.lastR);}
   const y=st.sys;if(!hidden)y.lagMax=Math.max(y.lagMax,y.lag);y.hist.push(hidden?null:y.lag);y.lag=0;
   if(y.b){if(y.b.charging)y.dischargingAll=false;else y.chargingAll=false;}
   y.pCount[y.pState]=(y.pCount[y.pState]||0)+1;y.bh.push(y.b?y.b.level*100:null);
@@ -568,7 +588,7 @@ function render(st,el){
   txt('elapsed',fmtTime(el)+(st.dur?' / '+fmtTime(st.dur):''));
   $('prog').style.width=st.dur?Math.min(100,el/st.dur*100)+'%':'100%';
   if(st.en.cpu){const c=st.cpu,h=c.hist,cur=last(h),b=base(h);
-    txt('cpu-big',fmt(cur,0));txt('cpu-thr',c.n);txt('cpu-base',b?fmt(b,0):'measuring…');txt('cpu-pct',b&&cur?fmt(cur/b*100,0)+'%':'–');txt('cpu-err',c.errs+(c.crashed?` (+${c.crashed} crash)`:''));
+    txt('cpu-big',fmt(cur,0));txt('cpu-thr',`${c.n} of ${c.t}`);txt('cpu-base',b?fmt(b,0):'measuring…');txt('cpu-pct',b&&cur?fmt(cur/b*100,0)+'%':'–');txt('cpu-err',c.errs+(c.crashed?` (+${c.crashed} crash)`:''));
     live('cpu',c.errs||c.crashed?'bad':'run');spark('cpu-spark',h,'#4f8cff',b);}
   if(st.en.gpu){const g=st.gpu,h=g.hist,cur=last(h),b=base(h);
     txt('gpu-big',g.err?'n/a':fmt(cur,0));txt('gpu-pct',b&&cur?fmt(cur/b*100,0)+'%':'–');txt('gpu-chk',g.checks?`${g.checks-g.mism}/${g.checks} OK`:'pending');txt('gpu-load',CFG.gpu);txt('gpu-lost',g.ctxLost);
@@ -577,9 +597,9 @@ function render(st,el){
     txt('ram-big',fmt(r.alloc));txt('ram-tgt',fmt(r.target)+' MB');txt('ram-bw',r.done?fmt(last(r.hist),0)+' MB/s':'allocating…');txt('ram-pass',r.pass);txt('ram-err',r.errs);
     live('ram',r.errs||r.crashed?'bad':r.allocErr?'warn':'run');spark('ram-spark',r.hist,'#2ecc71');}
   if(st.en.disk){const d=st.disk,lp=d.passes[d.passes.length-1];
-    txt('disk-big',d.phase==='write'?fmt(d.live,0):lp?fmt(lp.w,0):'–');txt('disk-read',lp?fmt(lp.r,0)+' MB/s':d.phase==='read'?fmt(d.live,0)+' MB/s':'–');
+    txt('disk-big',d.lastW!=null?fmt(d.lastW,0):'–');txt('disk-read',d.lastR!=null?fmt(d.lastR,0):'–'); // same values the graph lines show
     txt('disk-phase',d.err?'error':d.phase||'starting');txt('disk-pass',d.passes.length);txt('disk-err',d.errs);txt('disk-mode',d.mode);
-    live('disk',d.E.corrupt?'bad':d.errs||d.err?'warn':'run');spark('disk-spark',d.hist,'#f5b301');}
+    live('disk',d.E.corrupt?'bad':d.errs||d.err?'warn':'run');spark('disk-spark',d.hist,'#f5b301',null,d.rhist,'#7aa7ff');}
   if(st.en.net){const n=st.net,l20=n.lat.slice(-20),tot=n.ok+n.fail,loss=tot?n.fail/tot*100:0;
     txt('net-big',fmt(last(n.lat),0));txt('net-dl',n.dl.length?fmt(last(n.dl),1)+' Mbps':'–');txt('net-ul',n.ul.length?fmt(last(n.ul),1)+' Mbps':'–');
     txt('net-jit',l20.length>2?fmt(sd(l20),0)+' ms':'–');txt('net-loss',tot?fmt(loss,1)+'%':'–');txt('net-srv',n.provider||'–');txt('net-off',n.offline);
@@ -595,7 +615,7 @@ function resetTiles(st){
   live('sys',st?'run':'idle');
   ['cpu-big','cpu-base','cpu-pct','gpu-big','gpu-pct','gpu-chk','ram-big','ram-tgt','ram-bw','disk-big','disk-read','disk-phase','disk-mode','disk-size','net-big','net-dl','net-ul','net-jit','net-loss','net-srv','sys-big','sys-chg','sys-drain','sys-pres','sys-lag','sys-wake','sys-hid'].forEach(i=>txt(i,'–'));
   ['cpu-err','gpu-lost','ram-pass','ram-err','disk-pass','disk-err','net-off'].forEach(i=>txt(i,'0'));
-  txt('cpu-thr',DEV.threads||'–');txt('gpu-load',CFG.gpu);
+  txt('cpu-thr',DEV.threads?`${Math.max(1,DEV.threads-1)} of ${DEV.threads}`:'–');txt('gpu-load',CFG.gpu);
   document.querySelectorAll('canvas.spark').forEach(c=>{const x=c.getContext('2d');x.setTransform(1,0,0,1,0,0);x.clearRect(0,0,c.width,c.height);});
 }
 function setRunningUI(on){
@@ -621,8 +641,10 @@ function phase(h){
 function thr(ps,label){
   if(!ps)return F('info',`Test too short to measure sustained ${label} (needs at least ~1 minute).`);
   const pct=Math.round(ps.ratio*100);
+  // Thresholds judge cooling faults, not speed: fanless/low-end devices normally settle at 60–80% under sustained load.
   if(ps.ratio>=0.8)return F('ok',`Held ${pct}% of initial ${label} under sustained load — no significant throttling.`);
-  if(ps.ratio>=0.6)return F('warn',`Fell to ${pct}% of initial ${label} — moderate thermal throttling. Check that vents/fan are clear of dust.`);
+  if(ps.ratio>=0.6)return F('ok',`Settled at ${pct}% of initial ${label} under sustained load — normal thermal throttling, typical of thin and fanless designs.`);
+  if(ps.ratio>=0.4)return F('warn',`Fell to ${pct}% of initial ${label} — heavy throttling. Check that vents/fan are clear of dust, and compare with a known-good unit of the same model.`);
   return F('bad',`Fell to ${pct}% of initial ${label} — severe throttling. Likely a cooling problem (blocked vents, failing fan, dried thermal paste).`);
 }
 function comp(key,name,metrics,findings){
@@ -637,8 +659,8 @@ function assess(st){
     if(c.errs)f.push(F('bad',`${c.errs} calculation error(s) — the CPU produced wrong results under load. Sign of instability (overheating or failing hardware).`));
     else f.push(F('ok','Every calculation was verified correct.'));
     f.push(thr(ps,'CPU speed'));
-    if(ps&&ps.cv>0.25)f.push(F('warn',`Speed swung by ±${Math.round(ps.cv*100)}% late in the test — unstable clocks.`));
-    R.comps.push(comp('cpu','CPU',[['Threads',c.n],['Average',fmt(ps?ps.mean:avg(valid(c.hist)),0)+' Mops/s'],['Initial',ps?fmt(ps.base,0):'–'],['Sustained',ps?fmt(ps.sus,0):'–'],['Errors',c.errs]],f));}
+    if(ps&&ps.cv>0.25)f.push(F('info',`Speed varied by ±${Math.round(ps.cv*100)}% late in the test — common on low-power chips that boost in bursts.`));
+    R.comps.push(comp('cpu','CPU',[['Workers',`${c.n} of ${c.t} threads`],['Average',fmt(ps?ps.mean:avg(valid(c.hist)),0)+' Mops/s'],['Initial',ps?fmt(ps.base,0):'–'],['Sustained',ps?fmt(ps.sus,0):'–'],['Errors',c.errs]],f));}
   if(st.en.gpu){const g=st.gpu,ps=phase(g.hist),f=[];
     if(g.err)f.push(F('bad','GPU test could not start: '+g.err));
     else{
@@ -703,9 +725,10 @@ function assess(st){
     // Thermal pressure and UI responsiveness describe CPU load, so they join the CPU card.
     if(y.po){const tot=Object.values(y.pCount).reduce((a,b)=>a+b,0)||1,cr=(y.pCount.critical||0)/tot,se=(y.pCount.serious||0)/tot;
       m.push(['Thermal pressure',`serious ${Math.round(se*100)}%, critical ${Math.round(cr*100)}%`]);
-      if(cr>0.1)f.push(F('warn',`Chrome reported CRITICAL thermal/power pressure ${Math.round(cr*100)}% of the time — the device hit its limit.`));}
+      if(cr>0.1)f.push(F('info',`Chrome reported critical CPU pressure ${Math.round(cr*100)}% of the time. That's expected while a stress test keeps the CPU fully busy; throttling above shows whether it actually hurt performance.`));}
     m.push(['Max UI freeze',fmt(y.lagMax,0)+' ms']);
-    if(y.lagMax>2000)f.push(F('warn',`The page froze for up to ${fmt(y.lagMax/1000,1)} s — the system is struggling (possibly swapping memory).`));
+    if(y.lagMax>10000)f.push(F('warn',`The page froze for up to ${fmt(y.lagMax/1000,1)} s — the system is struggling badly (possibly out of memory and swapping).`));
+    else if(y.lagMax>2000)f.push(F('info',`The page paused for up to ${fmt(y.lagMax/1000,1)} s under full load — common on low-end hardware.`));
     const ci=R.comps.findIndex(c=>c.key==='cpu');
     if(ci>=0){const c=R.comps[ci];R.comps[ci]=comp('cpu','CPU',[...c.metrics,...m],[...c.findings,...f]);}
     else if(f.length)R.comps.push(comp('sys','System',m,f));
@@ -796,7 +819,7 @@ async function listDevs(kind,sel,cur){
 }
 /* webcam */
 let camStream=null,camTok=0;
-function camStop(){camTok++;if(camStream)camStream.getTracks().forEach(t=>t.stop());camStream=null;$('camVid').srcObject=null;txt('camBtn','Start');}
+function camStop(){camOvClose();camTok++;if(camStream)camStream.getTracks().forEach(t=>t.stop());camStream=null;$('camVid').srcObject=null;txt('camBtn','Start');$('camInspect').disabled=true;}
 async function camStart(){
   camStop();const tok=camTok;
   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){txt('camInfo',window.isSecureContext?'Camera API unavailable in this browser.':'Blocked: the browser only allows the camera on https:// pages or local files. See README.');PER.cam.info='';return;}
@@ -804,7 +827,7 @@ async function camStart(){
   try{
     const id=$('camSel').value,v={width:{ideal:1920},height:{ideal:1080}};if(id)v.deviceId={exact:id};
     const st=await navigator.mediaDevices.getUserMedia({video:v});if(tok!==camTok){st.getTracks().forEach(t=>t.stop());return;}
-    camStream=st;const vid=$('camVid'),tr=st.getVideoTracks()[0];vid.srcObject=st;await vid.play();txt('camBtn','Stop');
+    camStream=st;const vid=$('camVid'),tr=st.getVideoTracks()[0];vid.srcObject=st;await vid.play();txt('camBtn','Stop');$('camInspect').disabled=false;if(tok===camTok)camOvOpen(); // go straight to the full-window view
     await listDevs('videoinput',$('camSel'),tr.getSettings().deviceId);
     tr.onended=()=>{if(tok===camTok){PER.cam.warn=['camera stream ended unexpectedly (disconnected?)'];txt('camInfo','⚠ Camera stream ended unexpectedly.');}};
     const cv=document.createElement('canvas');cv.width=32;cv.height=18;const cx=cv.getContext('2d',{willReadFrequently:true});
@@ -821,6 +844,25 @@ async function camStart(){
   }catch(e){if(tok!==camTok)return;txt('camInfo',mediaErr(e,'camera'));PER.cam.info=mediaErr(e,'camera');if(e&&e.name==='NotFoundError')PER.cam.warn=['no camera detected'];}
 }
 $('camBtn').onclick=()=>camStream?camStop():camStart();
+/* full-window inspection view */
+let camOvT=0,camOne=false;
+function camOvSize(){const v=$('camOvVid'),dpr=devicePixelRatio||1;
+  if(camOne&&v.videoWidth){v.style.width=v.videoWidth/dpr+'px';v.style.height=v.videoHeight/dpr+'px';}else{v.style.width='';v.style.height='';}}
+function camOvMode(one){camOne=one;const vw=$('camOvView');vw.classList.toggle('one',one);$('camOvFit').classList.toggle('on',!one);$('camOv11').classList.toggle('on',one);camOvSize();
+  if(one)requestAnimationFrame(()=>{vw.scrollLeft=(vw.scrollWidth-vw.clientWidth)/2;vw.scrollTop=(vw.scrollHeight-vw.clientHeight)/2;});}
+function camOvOpen(){if(!camStream)return;const v=$('camOvVid');v.srcObject=camStream;v.play().catch(()=>{});$('camOv').hidden=false;camOvMode(false);
+  const sync=()=>{txt('camOvInfo',$('camInfo').textContent);const st=PER.cam.s;$('camOvPass').classList.toggle('on',st==='pass');$('camOvFail').classList.toggle('on',st==='fail');};
+  sync();clearInterval(camOvT);camOvT=setInterval(sync,500);}
+function camOvClose(){if($('camOv').hidden)return;clearInterval(camOvT);$('camOv').hidden=true;$('camOvVid').srcObject=null;}
+function camOvMark(v){PER.cam.s=v;pfRefresh();updRep();camOvClose();}
+$('camInspect').onclick=camOvOpen;$('camVid').onclick=camOvOpen;
+$('camOvFit').onclick=()=>camOvMode(false);$('camOv11').onclick=()=>camOvMode(true);
+$('camOvPass').onclick=()=>camOvMark('pass');$('camOvFail').onclick=()=>camOvMark('fail');$('camOvBack').onclick=camOvClose;
+$('camOvVid').addEventListener('loadedmetadata',camOvSize);window.addEventListener('resize',()=>{if(!$('camOv').hidden)camOvSize();});
+{let drag=null;const vw=$('camOvView'); // drag to pan in 1:1 mode
+  vw.addEventListener('pointerdown',e=>{if(!camOne)return;drag={x:e.clientX,y:e.clientY,l:vw.scrollLeft,t:vw.scrollTop};vw.setPointerCapture(e.pointerId);vw.style.cursor='grabbing';});
+  vw.addEventListener('pointermove',e=>{if(!drag)return;vw.scrollLeft=drag.l-(e.clientX-drag.x);vw.scrollTop=drag.t-(e.clientY-drag.y);});
+  ['pointerup','pointercancel'].forEach(t=>vw.addEventListener(t,()=>{drag=null;vw.style.cursor='';}));}
 $('camSel').onchange=()=>{if(camStream)camStart();};
 /* microphone */
 let micStream=null,micTok=0,actx=null;
@@ -883,7 +925,7 @@ function buildKB(){if(kbBuilt)return;kbBuilt=true;$('kb').innerHTML=KB.map(r=>'<
 function keyStatus(){const tot=KB.flat().length,hit=[...keyHit].filter(c=>document.querySelector(`.k[data-c="${c}"]`)).length;
   txt('keyInfo',`${hit} of ${tot} keys pressed`);txt('keyExtra','Other keys detected: '+(keyExtra.size?[...keyExtra].join(', '):'none')+'  ·  Keys this layout doesn’t have (or the OS reserves) can be ignored.');
   PER.keys.info=`${hit} of ${tot} layout keys pressed`+(keyExtra.size?`, plus ${keyExtra.size} other`:'');}
-document.addEventListener('keydown',e=>{if(!$('perDlg').open||SCR.on)return;const tg=e.target.tagName;if(tg==='SELECT'||(tg==='INPUT'&&e.target.type!=='range'))return;
+document.addEventListener('keydown',e=>{if(!$('perDlg').open||SCR.on)return;if(!$('camOv').hidden){e.preventDefault();if(e.key==='Escape')camOvClose();return;}const tg=e.target.tagName;if(tg==='SELECT'||(tg==='INPUT'&&e.target.type!=='range'))return;
   e.preventDefault();const code=e.code||e.key,el=document.querySelector(`.k[data-c="${code}"]`);keyHit.add(code);
   if(el)el.classList.add('hit','down');else keyExtra.add(code||'Unidentified');keyStatus();},true);
 document.addEventListener('keyup',e=>{if(!$('perDlg').open)return;const el=document.querySelector(`.k[data-c="${e.code||e.key}"]`);if(el)el.classList.remove('down');
