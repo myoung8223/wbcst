@@ -163,8 +163,8 @@ dialog h2{margin:0 0 10px;font-size:18px}
 
   <section class="tile" id="t-gpu">
     <div class="th"><label><input type="checkbox" id="en-gpu" checked>GPU</label><span class="dot" id="d-gpu"></span><span class="st" id="s-gpu">Idle</span></div>
-    <div class="big"><span id="gpu-big">–</span><small>FPS</small></div>
-    <div class="stats"><span>vs initial</span><b id="gpu-pct">–</b><span>Checks</span><b id="gpu-chk">–</b><span>Load</span><b id="gpu-load">–</b><span>Resets</span><b id="gpu-lost">0</b></div>
+    <div class="big"><span id="gpu-big">–</span><small title="Billions of test operations per second (one op = one pass through the shader loop for one pixel)">Gops/s</small></div>
+    <div class="stats"><span>vs initial</span><b id="gpu-pct">–</b><span>Checks</span><b id="gpu-chk">–</b><span>FPS</span><b id="gpu-fps">–</b><span>Load</span><b id="gpu-load">–</b><span>Resets</span><b id="gpu-lost">0</b></div>
     <div class="gwrap"><canvas id="gpuCanvas" width="1280" height="720"></canvas><canvas class="spark" id="gpu-spark"></canvas></div>
   </section>
 
@@ -272,7 +272,7 @@ dialog h2{margin:0 0 10px;font-size:18px}
 
 <script>
 'use strict';
-const BUILD=18; // increment with every release
+const BUILD=19; // increment with every release
 /* ---------- helpers ---------- */
 const $=id=>document.getElementById(id);
 const txt=(id,v)=>{const e=$(id);if(e)e.textContent=v;};
@@ -424,14 +424,26 @@ function initGL(){
   GPU.fbo=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,GPU.fbo);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,tex,0);gl.bindFramebuffer(gl.FRAMEBUFFER,null);
   GPU.ok=true;
 }
-function gpuFrame(st){
-  if(!st.running)return;st.gpu.raf=requestAnimationFrame(()=>gpuFrame(st));
-  const gl=GPU.gl;if(!GPU.ok||gl.isContextLost())return;const L=LOADS[CFG.gpu]||LOADS.high;
-  gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,gl.drawingBufferWidth,gl.drawingBufferHeight);
+/* Adaptive load: the amount of work per frame (in full-screen passes, fractional allowed) is tuned so each
+   frame takes ~50 ms. Fast GPUs get many passes, slow GPUs a fraction of one, so the GPU stays fully busy
+   without the page stalling for seconds. The score is work per second, which is comparable over a run. */
+const GPU_TARGET_MS=50;
+function gpuFrame(st,now){
+  if(!st.running)return;st.gpu.raf=requestAnimationFrame(t=>gpuFrame(st,t));
+  const g=st.gpu,gl=GPU.gl;if(!GPU.ok||gl.isContextLost()){g.lastT=0;return;}const L=LOADS[CFG.gpu]||LOADS.high;
+  if(g.lastT&&now){const dt=now-g.lastT; // frame time of the previous frame -> adjust the amount of work
+    if(dt<GPU_TARGET_MS*0.5)g.amt*=1.25;else if(dt<GPU_TARGET_MS*0.8)g.amt*=1.06;else if(dt>GPU_TARGET_MS*1.25)g.amt*=Math.max(0.5,GPU_TARGET_MS/dt);
+    g.amt=Math.max(0.02,Math.min(64,g.amt));}
+  g.lastT=now||0;
+  const W=gl.drawingBufferWidth,H=gl.drawingBufferHeight,full=Math.floor(g.amt),part=g.amt-full;
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,W,H);gl.disable(gl.SCISSOR_TEST);
   gl.clearColor(0,0,0,1);gl.clear(gl.COLOR_BUFFER_BIT);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE); // additive blend defeats hidden-surface removal on tile GPUs
-  gl.uniform2f(GPU.u.uRes,gl.drawingBufferWidth,gl.drawingBufferHeight);gl.uniform1i(GPU.u.uIter,L.iter);gl.uniform1f(GPU.u.uScale,1/L.passes);
-  const t=(performance.now()-st.t0)/1000;for(let i=0;i<L.passes;i++){gl.uniform1f(GPU.u.uT,t+i*0.05);gl.drawArrays(gl.TRIANGLES,0,3);}
-  st.gpu.frames++;
+  gl.uniform2f(GPU.u.uRes,W,H);gl.uniform1i(GPU.u.uIter,L.iter);gl.uniform1f(GPU.u.uScale,1/Math.max(1,g.amt));
+  const t=(performance.now()-st.t0)/1000;let rows=0;
+  for(let i=0;i<full;i++){gl.uniform1f(GPU.u.uT,t+i*0.05);gl.drawArrays(gl.TRIANGLES,0,3);rows+=H;}
+  if(part>0.005){const h=Math.max(1,Math.round(H*part));gl.enable(gl.SCISSOR_TEST);gl.scissor(0,0,W,h);gl.uniform1f(GPU.u.uT,t+full*0.05);gl.drawArrays(gl.TRIANGLES,0,3);gl.disable(gl.SCISSOR_TEST);rows+=h;}
+  g.work+=rows*W*L.iter; // operations (shader loop passes) submitted this frame
+  g.frames++;
 }
 function gpuCheck(st){ // render a fixed frame and compare its pixel hash to the first one
   const gl=GPU.gl;if(!GPU.ok||gl.isContextLost())return;const L=LOADS[CFG.gpu]||LOADS.high;
@@ -489,26 +501,31 @@ function netTile(){ // reflect server availability on the Network tile (only whe
   syncQuick();
 }
 let UPBUF=null;function upBuf(n){if(!UPBUF){UPBUF=new Uint8Array(6*1048576);for(let i=0;i<UPBUF.length;i+=65536)crypto.getRandomValues(UPBUF.subarray(i,i+65536));}return UPBUF.subarray(0,n);}
-async function timedGet(url,timeout,st){
+/* Network timings come from the browser's own request timestamps (Resource Timing), recorded by the
+   network stack, so a stalled page can't inflate them. Falls back to page timing if unavailable. */
+function netTime(url,ttfb){try{const e=performance.getEntriesByName(url).pop();performance.clearResourceTimings();
+  if(!e||!e.requestStart||!e.responseEnd)return null;const v=ttfb?e.responseStart-e.requestStart:e.responseEnd-e.requestStart;return v>0?v:null;}catch(x){return null;}}
+async function timedGet(url,timeout,st,ttfb){
   const ac=new AbortController(),to=setTimeout(()=>ac.abort(),timeout);
   try{
     const t=performance.now(),r=await fetch(url,netOpts({signal:ac.signal}));if(!r.ok)throw new Error('HTTP '+r.status);
     let bytes=0;const rd=r.body.getReader();
     for(;;){const{done,value}=await rd.read();if(done)break;bytes+=value.byteLength;if(st&&!st.running){ac.abort();break;}}
-    return{ms:performance.now()-t,bytes};
+    const js=performance.now()-t;await sleep(0); // let the timing entry be recorded
+    return{ms:netTime(url,ttfb)??js,bytes};
   }finally{clearTimeout(to);}
 }
 const clampN=(v,lo,hi)=>Math.round(Math.max(lo,Math.min(hi,v)));
 async function netLoop(st){
   const N=st.net,b=SRV.base;N.provider=SRV.host;let dl=2e6,ul=1e6; // sizes adapt so each transfer takes ~1 s
   while(st.running){
-    for(let i=0;i<4&&st.running;i++){try{const r=await timedGet(b+'down.php?bytes=0&r='+rnd(),5000,st);if(!st.running)break;N.lat.push(r.ms);N.ok++;}catch(e){if(st.running)N.fail++;}await sleep(400);}
+    for(let i=0;i<4&&st.running;i++){try{const r=await timedGet(b+'down.php?bytes=0&r='+rnd(),5000,st,true);if(!st.running)break;N.lat.push(r.ms);N.ok++;}catch(e){if(st.running)N.fail++;}await sleep(400);}
     if(!st.running)break;
     try{const r=await timedGet(b+`down.php?bytes=${dl}&r=${rnd()}`,30000,st);
       if(st.running){if(r.bytes!==dl)throw new Error('short');const bps=r.bytes/(r.ms/1000);N.dl.push(bps*8/1e6);N.ok++;dl=clampN(bps,1e6,50e6);}}catch(e){if(st.running)N.fail++;}
     if(!st.running)break;
     {const ac=new AbortController(),to=setTimeout(()=>ac.abort(),30000);
-      try{const t=performance.now(),r=await fetch(b+'up.php?r='+rnd(),netOpts({method:'POST',body:upBuf(ul),signal:ac.signal})),got=+(await r.text()),ms=performance.now()-t;
+      try{const u=b+'up.php?r='+rnd(),t=performance.now(),r=await fetch(u,netOpts({method:'POST',body:upBuf(ul),signal:ac.signal})),got=+(await r.text()),js=performance.now()-t;await sleep(0);const ms=netTime(u)??js;
         if(st.running){if(!r.ok||got!==ul){N.fail++;if(r.ok&&got<ul)N.ulShort=true;}else{const bps=ul/(ms/1000);N.ul.push(bps*8/1e6);N.ok++;ul=clampN(bps,1e6,6e6);}}}
       catch(e){if(st.running)N.fail++;}finally{clearTimeout(to);}}
     await sleep(1000);
@@ -527,7 +544,7 @@ function updRep(){$('repBtn').disabled=!!(S&&S.running)||!hasResults();}
 const KEYS=['cpu','gpu','ram','disk','net'];
 function newState(en){const now=performance.now();return{en,running:true,t0:now,last:now,sec:0,hiddenSec:0,dur:0,
   cpu:{workers:[],acc:[],errs:0,crashed:0,hist:[],n:0},
-  gpu:{frames:0,hist:[],ctxLost:0,checks:0,mism:0,ref:null,raf:0,err:null},
+  gpu:{frames:0,work:0,amt:1,lastT:0,hist:[],fps:[],ctxLost:0,checks:0,mism:0,ref:null,raf:0,err:null},
   ram:{w:null,target:0,alloc:0,allocErr:null,bytes:0,hist:[],errs:0,pass:0,crashed:0,done:false},
   disk:{w:null,mode:'–',mb:0,passes:[],errs:0,E:{corrupt:0,stale:0,empty:0,short:0,shortW:0,transient:0},err:null,live:0,phase:'',hist:[],rhist:[],lastW:null,lastR:null,maxW:0,stopped:false},
   net:{provider:null,lat:[],dl:[],ul:[],ok:0,fail:0,offline:0,ulShort:false},
@@ -537,7 +554,7 @@ function startCPU(st){
   const t=DEV.threads||4,n=Math.max(1,t-1);st.cpu.n=n;st.cpu.t=t;st.cpu.acc=new Array(n).fill(0); // leave one thread free so the browser stays responsive
   for(let i=0;i<n;i++){const w=mkWorker(cpuWorker);w.onmessage=e=>{st.cpu.acc[i]+=e.data.ops;st.cpu.errs+=e.data.errs;};w.onerror=()=>{st.cpu.crashed++;};w.postMessage(i);st.cpu.workers.push(w);}
 }
-function startGPU(st){try{if(!GPU.gl)initGL();}catch(e){st.gpu.err=String(e.message||e);return;}st.gpu.raf=requestAnimationFrame(()=>gpuFrame(st));}
+function startGPU(st){try{if(!GPU.gl)initGL();}catch(e){st.gpu.err=String(e.message||e);return;}st.gpu.raf=requestAnimationFrame(t=>gpuFrame(st,t));}
 function startRAM(st){
   const r=st.ram,gb=DEV.mem||4;r.target=Math.max(64,Math.floor(gb*1024*CFG.ramPct/100/16)*16);
   const w=mkWorker(ramWorker);r.w=w;
@@ -594,7 +611,7 @@ function tick(st){
   if(!st.running)return;
   const now=performance.now(),dt=Math.max(0.2,(now-st.last)/1000),hidden=document.hidden,el=(now-st.t0)/1000;st.last=now;st.sec++;if(hidden)st.hiddenSec++;
   if(st.en.cpu){const c=st.cpu,tot=c.acc.reduce((a,b)=>a+b,0);c.acc.fill(0);c.hist.push(tot/1e6/dt);}
-  if(st.en.gpu){const g=st.gpu;g.hist.push(hidden||!GPU.ok||g.err?null:g.frames/dt);g.frames=0;if(!hidden&&!g.err&&st.sec%10===5)gpuCheck(st);}
+  if(st.en.gpu){const g=st.gpu,bad=hidden||!GPU.ok||g.err;g.hist.push(bad?null:g.work/dt/1e9);g.fps.push(bad?null:g.frames/dt);g.frames=0;g.work=0;if(!hidden&&!g.err&&st.sec%10===5)gpuCheck(st);}
   if(st.en.ram){const r=st.ram;r.hist.push(r.done?r.bytes/1048576/dt:null);r.bytes=0;}
   if(st.en.disk){const d=st.disk;d.hist.push(d.lastW);d.rhist.push(d.lastR);}
   const y=st.sys;if(!hidden)y.lagMax=Math.max(y.lagMax,y.lag);y.hist.push(hidden?null:y.lag);y.lag=0;
@@ -610,8 +627,8 @@ function render(st,el){
     txt('cpu-big',fmt(cur,0));txt('cpu-thr',`${c.n} of ${c.t}`);txt('cpu-base',b?fmt(b,0):'measuring…');txt('cpu-pct',b&&cur?fmt(cur/b*100,0)+'%':'–');txt('cpu-err',c.errs+(c.crashed?` (+${c.crashed} crash)`:''));
     live('cpu',c.errs||c.crashed?'bad':'run');spark('cpu-spark',h,'#4f8cff',b,null,null,null,'Mops/s');}
   if(st.en.gpu){const g=st.gpu,h=g.hist,cur=last(h),b=base(h);
-    txt('gpu-big',g.err?'n/a':fmt(cur,0));txt('gpu-pct',b&&cur?fmt(cur/b*100,0)+'%':'–');txt('gpu-chk',g.checks?`${g.checks-g.mism}/${g.checks} OK`:'pending');txt('gpu-load',CFG.gpu);txt('gpu-lost',g.ctxLost);
-    live('gpu',g.err||g.ctxLost||g.mism?'bad':'run');spark('gpu-spark',h,'#b06cff',b,null,null,null,'FPS');}
+    txt('gpu-big',g.err?'n/a':cur==null?'–':fmt(cur,cur<10?2:cur<100?1:0));txt('gpu-fps',fmt(last(g.fps),0));txt('gpu-pct',b&&cur?fmt(cur/b*100,0)+'%':'–');txt('gpu-chk',g.checks?`${g.checks-g.mism}/${g.checks} OK`:'pending');txt('gpu-load',CFG.gpu);txt('gpu-lost',g.ctxLost);
+    live('gpu',g.err||g.ctxLost||g.mism?'bad':'run');spark('gpu-spark',h,'#b06cff',b,null,null,null,'Gops/s');}
   if(st.en.ram){const r=st.ram;
     txt('ram-big',fmt(r.alloc));txt('ram-tgt',fmt(r.target)+' MB');txt('ram-bw',r.done?fmt(last(r.hist),0)+' MB/s':'allocating…');txt('ram-pass',r.pass);txt('ram-err',r.errs);
     live('ram',r.errs||r.crashed?'bad':r.allocErr?'warn':'run');spark('ram-spark',r.hist,'#2ecc71');}
@@ -686,16 +703,17 @@ function assess(st){
       if(g.ctxLost)f.push(F('bad',`Graphics context lost ${g.ctxLost} time(s) — the GPU or its driver reset under load.`));
       if(g.mism)f.push(F('bad',`${g.mism} of ${g.checks} render checks produced different pixels — inconsistent GPU output.`));
       else if(g.checks)f.push(F('ok',`All ${g.checks} render checks matched.`));
-      f.push(thr(ps,'frame rate'));
-      if(ps&&ps.sus<5)f.push(F('info','Very low frame rate at this load level. Not a fault by itself — compare with the same model or lower the GPU load.'));
+      f.push(thr(ps,'GPU throughput'));
     }
-    R.comps.push(comp('gpu','GPU',[['API',GPU.api||'–'],['Load',CFG.gpu],['Average',ps?fmt(ps.mean,1)+' FPS':'–'],['Initial',ps?fmt(ps.base,1):'–'],['Sustained',ps?fmt(ps.sus,1):'–'],['Render checks',g.checks?`${g.checks-g.mism}/${g.checks}`:'–'],['Resets',g.ctxLost]],f));}
+    const gf=(v,u)=>v==null?'–':fmt(v,v<10?2:v<100?1:0)+(u?' '+u:'');
+    R.comps.push(comp('gpu','GPU',[['API',GPU.api||'–'],['Load',CFG.gpu],['Average',ps?gf(ps.mean,'Gops/s'):'–'],['Initial',ps?gf(ps.base):'–'],['Sustained',ps?gf(ps.sus):'–'],['Avg frame rate',valid(g.fps).length?fmt(avg(valid(g.fps)),0)+' FPS':'–'],['Render checks',g.checks?`${g.checks-g.mism}/${g.checks}`:'–'],['Resets',g.ctxLost]],f));}
   if(st.en.ram){const r=st.ram,ps=phase(r.hist),f=[];
     if(r.crashed)f.push(F('bad','Memory test worker crashed (possibly ran out of memory).'));
     if(r.errs)f.push(F('bad',`${r.errs} memory verification error(s) — data changed after being written. Strong sign of faulty RAM.`));
     else if(r.pass>0)f.push(F('ok',`${r.pass} write/verify pass(es) over ${fmt(r.alloc)} MB with no errors.`));
     else f.push(F(dur<60?'info':'warn','No complete memory pass finished — run the test longer.'));
-    if(r.allocErr||(r.done&&r.alloc<r.target))f.push(F('warn',`Only ${fmt(r.alloc)} of ${fmt(r.target)} MB could be allocated — low free memory or a browser limit.`));
+    if(r.allocErr||(r.done&&r.alloc<r.target)){const pct=r.target?r.alloc/r.target:1;
+      f.push(F(pct<0.75?'warn':'info',`Only ${fmt(r.alloc)} of ${fmt(r.target)} MB could be allocated — the browser limits how much memory one tab can use (especially 32-bit browsers), or free memory was low.`));}
     if(ps&&ps.ratio<0.6)f.push(F('warn',`Memory bandwidth fell to ${Math.round(ps.ratio*100)}% of initial — thermal throttling.`));
     R.comps.push(comp('ram','RAM',[['Tested',fmt(r.alloc)+' MB'],['Target',fmt(r.target)+' MB'],['Bandwidth',ps?fmt(ps.mean,0)+' MB/s':'–'],['Passes',r.pass],['Errors',r.errs]],f));}
   if(st.en.disk){const d=st.disk,P=d.passes,f=[],ws=P.map(p=>p.w),opfs=d.mode==='OPFS';
@@ -710,18 +728,18 @@ function assess(st){
     if(P.length>=3){const a=ws[0],z=avg(ws.slice(-2));if(z<a*0.5)f.push(F('warn',`Write speed fell to ${Math.round(z/a*100)}% of the first pass — storage slows under sustained load.`));}
     if(d.maxW>(opfs?2000:5000))f.push(F('warn',`Slowest single 1 MB write took ${fmt(d.maxW/1000,1)} s — storage stalls.`));
     R.comps.push(comp('disk','Storage',[['API',d.mode],['File',d.mb+' MB'],['Passes',P.length],['Avg write',P.length?fmt(avg(ws),0)+' MB/s':'–'],['Avg read*',P.length?fmt(avg(P.map(p=>p.r)),0)+' MB/s':'–'],['Slowest 1 MB write',P.length?fmt(d.maxW,0)+' ms':'–'],['Bad blocks',d.errs?`${d.errs} (scrambled ${d.E.corrupt})`:'0']],f));}
-  if(st.en.net){const n=st.net,f=[],tot=n.ok+n.fail,loss=tot?n.fail/tot*100:0,ml=median(n.lat),jit=sd(n.lat.slice(1));
+  if(st.en.net){const n=st.net,f=[],tot=n.ok+n.fail,loss=tot?n.fail/tot*100:0,ml=median(n.lat),dlS=n.dl.length>2?n.dl.slice(1):n.dl,ulS=n.ul.length>2?n.ul.slice(1):n.ul /* first transfer is a warm-up while sizes adapt */,jit=median(n.lat.slice(1).map((v,i)=>Math.abs(v-n.lat[i]))); // robust: one stray sample can't dominate
     if(!n.ok){f.push(F('bad',`Could not reach the test server (${n.provider}) — offline, or the connection is blocked.`));}
     else{
       if(n.offline)f.push(F('bad',`Connection dropped ${n.offline} time(s) during the test.`));
       f.push(loss>10?F('bad',`${fmt(loss,1)}% of ${tot} requests failed.`):loss>2?F('warn',`${fmt(loss,1)}% of ${tot} requests failed.`):F('ok',`${tot} requests, ${fmt(loss,1)}% failed.`));
       if(ml>150)f.push(F('warn',`High latency (median ${fmt(ml,0)} ms).`));
       if(jit>50)f.push(F('warn',`High jitter (${fmt(jit,0)} ms) — unstable Wi-Fi link.`));
-      if(n.dl.length>=3&&sd(n.dl)/avg(n.dl)>0.6)f.push(F('warn','Download speed was very inconsistent — weak signal, interference, or congestion.'));
+      if(dlS.length>=3&&sd(dlS)/avg(dlS)>0.6)f.push(F('warn','Download speed was very inconsistent — weak signal, interference, or congestion.'));
       if(n.ulShort)f.push(F('warn','Some uploads were cut short by the server — check PHP post_max_size (needs at least 8M).'));
       f.push(F('info','Results include the Wi-Fi and the network path to the test server, not just this computer.'));
     }
-    R.comps.push(comp('net','Network',[['Server',n.provider||'–'],['Median latency',fmt(ml,0)+' ms'],['Jitter',fmt(jit,0)+' ms'],['Failed',fmt(loss,1)+'%'],['Avg down',n.dl.length?fmt(avg(n.dl),1)+' Mbps':'–'],['Avg up',n.ul.length?fmt(avg(n.ul),1)+' Mbps':'–'],['Drops',n.offline]],f));}
+    R.comps.push(comp('net','Network',[['Server',n.provider||'–'],['Median latency',fmt(ml,0)+' ms'],['Jitter',fmt(jit,0)+' ms'],['Failed',fmt(loss,1)+'%'],['Median down',dlS.length?fmt(median(dlS),1)+' Mbps':'–'],['Median up',ulS.length?fmt(median(ulS),1)+' Mbps':'–'],['Drops',n.offline]],f));}
   {const y=st.sys,f=[],m=[];
     if(y.b&&y.b0){const m=[],f=[],b=y.b,l0=y.b0.level*100,l1=b.level*100,hrs=dur/3600;
       m.push(['Level',`${fmt(l0)}% → ${fmt(l1)}%`]);
@@ -756,7 +774,7 @@ function assess(st){
   R.skipped=KEYS.filter(k=>!st.en[k]).map(k=>k==='net'&&SRV.state!=='ok'?'Network (no test server)':({cpu:'CPU',gpu:'GPU',ram:'RAM',disk:'Storage',net:'Network'})[k]);
   R.graphs={};const GR=(k,d,label,col,ref)=>{R.graphs[k]={d,label,col,ref};};
   if(st.en.cpu)GR('cpu',st.cpu.hist,'CPU throughput over time (Mops/s)','#2f6fdf',base(st.cpu.hist));
-  if(st.en.gpu)GR('gpu',st.gpu.hist,'Frame rate over time (FPS)','#8b4fe0',base(st.gpu.hist));
+  if(st.en.gpu)GR('gpu',st.gpu.hist,'GPU throughput over time (Gops/s)','#8b4fe0',base(st.gpu.hist));
   if(st.en.ram)GR('ram',st.ram.hist,'Memory bandwidth over time (MB/s)','#1e9e57');
   if(st.en.disk)GR('disk',st.disk.passes.length>=2?st.disk.passes.map(p=>p.w):st.disk.hist,st.disk.passes.length>=2?'Write speed per pass (MB/s)':'Write speed (MB/s)','#c98a00');
   if(st.en.net)GR('net',st.net.lat,'Latency per request (ms)','#13a3a3');
