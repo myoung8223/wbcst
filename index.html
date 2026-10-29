@@ -314,13 +314,14 @@ function spark(id,data,color,ref,data2,color2,names,unit){
   const max=Math.max(...v,...v2,ref||0)*1.12||1,step=w/(n-1),off=n-d.length;
   const Y=val=>h-2-(val/max)*(h-6);
   if(ref){x.strokeStyle='rgba(139,147,165,.5)';x.setLineDash([4,4]);x.beginPath();x.moveTo(0,Y(ref));x.lineTo(w,Y(ref));x.stroke();x.setLineDash([]);}
-  if(ref){ // label the dashed starting-speed line at its left end (below the line if it sits near the top)
-    const lab='initial '+fmt(ref,ref<10?1:0)+(unit?' '+unit:'');x.font='10px system-ui';const tw=x.measureText(lab).width,ly=Y(ref)<24?Y(ref)+13:Y(ref)-4;
-    x.fillStyle='rgba(24,27,34,.75)';x.fillRect(1,ly-10,tw+6,13);x.fillStyle='rgba(170,177,192,.95)';x.fillText(lab,4,ly);}
   const line=(arr,col,o)=>{x.strokeStyle=col;x.lineWidth=1.6;x.beginPath();let on=false;
     arr.forEach((val,i)=>{if(val==null||!isFinite(val)){on=false;return;}const px=(i+o)*step,py=Y(val);if(on)x.lineTo(px,py);else{x.moveTo(px,py);on=true;}});x.stroke();};
   if(d2.length)line(d2,color2,n-d2.length);line(d,color,off);
-  x.fillStyle='rgba(139,147,165,.9)';x.font='10px system-ui';x.fillText('max '+fmt(max/1.12,0),3,10);
+  // Labels go on top of the lines, with a dark outline ("halo") so they stay readable where a line crosses them.
+  const halo=(t,tx,ty,col)=>{x.font='10px system-ui';x.lineJoin='round';x.lineWidth=3;x.strokeStyle='rgba(15,17,21,.95)';x.strokeText(t,tx,ty);x.fillStyle=col;x.fillText(t,tx,ty);};
+  halo('max '+fmt(max/1.12,0),3,10,'rgba(139,147,165,.95)');
+  if(ref){const ly=Y(ref)<24?Y(ref)+13:Y(ref)-4; // starting-speed label at the dashed line's left end (below it if near the top)
+    halo('initial '+fmt(ref,ref<10?1:0)+(unit?' '+unit:''),4,ly,'rgba(185,192,206,1)');}
   if(names){x.textAlign='right';x.fillStyle=color2;x.fillText(names[1],w-3,10);const rw=x.measureText(names[1]).width;x.fillStyle=color;x.fillText(names[0]+'  ',w-3-rw,10);x.textAlign='left';}
 }
 
