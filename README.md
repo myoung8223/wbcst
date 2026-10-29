@@ -21,7 +21,7 @@ It was built for checking school Chromebooks, but it works on any computer with 
 
 1. Open the hosted copy at **https://myoung8223.github.io/wbcst/**, or download `index.html` and open it in Chrome or Edge, either by double-clicking or from the Chromebook's Files app.
 2. For the network test, point it at your own test server with `?nts=` (see [URL parameters](#url-parameters)), for example `https://myoung8223.github.io/wbcst/?nts=wbcst`. A Raspberry Pi set up with **[RPI-SETUP.md](RPI-SETUP.md)** works well as the server.
-3. Close other tabs, choose a duration, and press **Start test**.
+3. Close other tabs, choose a duration, and press **Start**.
 4. Press **Stop** (or let the timer finish) to see the health report.
 
 For meaningful results, **run for at least 10 minutes** so the device heats up and any thermal throttling shows. To test the battery, unplug the device, don't start at 100%, and run for at least 10 minutes.
@@ -34,10 +34,13 @@ Settings can be passed in the page address, which is handy for bookmarks, or a l
 |---|---|---|
 | `nts` | **Network test server**, the server running `down.php` and `up.php`. A bare name gets `.local` added. Plain `http://` is assumed unless you write `https://`. A port and folder may be included. | `nts=wbcst` → `http://wbcst.local/`<br>`nts=192.168.1.50`<br>`nts=wbcst:8080/tester/` |
 | `t` | **Tester**: the technician's name or initials. Shown in the header, on every report, and in report file names. | `t=Mike`, `t=MGY` |
+| `d` | **Duration** of the stress test. A plain number is minutes; `h` and `s` suffixes mean hours and seconds; `0` means run until stopped. Durations not in the list are added to it. | `d=10`, `d=20`, `d=1h`, `d=0` |
 
-Combined: `https://myoung8223.github.io/wbcst/?nts=wbcst&t=MGY`
+Combined: `https://myoung8223.github.io/wbcst/?nts=wbcst&t=MGY&d=10`. That makes a handy target for a URL shortener or bookmark.
 
-Both can also be set in **⚙ Settings**. Values from the address take priority for that visit.
+`nts` and `t` can also be set in **⚙** (Settings), and the duration in the dropdown next to Start. Values from the address take priority for that visit without changing what's remembered.
+
+The duration defaults to **10 minutes**: long enough for heat to build so throttling shows, and for the battery checks to run. After that, the page remembers the last duration you picked.
 
 ### Using the GitHub Pages copy with a LAN server (recommended)
 
@@ -166,7 +169,7 @@ Any web server that runs PHP, with `index.html`, `down.php` and `up.php` in the 
 
 ### Using a server from elsewhere
 
-To use a test server from a page opened somewhere else, such as GitHub Pages or a local file, add `?nts=<server>` to the address (see [URL parameters](#url-parameters)), or set it in **⚙ Settings → Network server → Another server…**. The scripts send the CORS header needed for this.
+To use a test server from a page opened somewhere else, such as GitHub Pages or a local file, add `?nts=<server>` to the address (see [URL parameters](#url-parameters)), or set it in **⚙ (Settings) → Network server → Another server…**. The scripts send the CORS header needed for this.
 
 From an `https://` page, a plain-`http://` server works only in Chrome or Edge, and only for local-network addresses, after the *Local network access* permission is allowed. Other browsers block it as mixed content.
 
@@ -179,7 +182,7 @@ The Network tile shows why and switches itself off, and the report lists Network
 ## Tips and cautions
 
 - Stress tests make devices **hot** and drain batteries fast. Keep vents clear and don't run them on soft surfaces.
-- If the tab crashes during the RAM test, lower the RAM percentage in ⚙ Settings.
+- If the tab crashes during the RAM test, lower the RAM percentage in ⚙ (Settings).
 - Keep the test tab in front. Background tabs are throttled by the browser, and the report notes it if that happened.
 - The page keeps the screen awake during a test where the browser allows it.
 

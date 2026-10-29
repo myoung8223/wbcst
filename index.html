@@ -10,19 +10,24 @@
 html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:14px/1.35 system-ui,"Segoe UI",Roboto,sans-serif;overflow:hidden}
 body{display:flex;flex-direction:column;height:100vh;padding:10px;gap:8px}
 header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.hleft{flex:1 1 0;min-width:240px}
+.hrow{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#devinfo{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hctl{display:flex;align-items:center;gap:8px;flex:none}
+#setBtn{font-size:16px;padding:5px 11px}
 h1{font-size:18px;margin:0;font-weight:650;letter-spacing:.2px;display:inline}
 .repo{font-size:12px;margin-left:8px;color:var(--accent);vertical-align:2px}
 .repo:hover{text-decoration:underline}
 .dim{color:var(--dim);font-size:12px}
 .spacer{flex:1}
-.timer{display:flex;flex-direction:column;align-items:flex-end;min-width:130px}
+.timer{display:flex;flex-direction:column;align-items:flex-end;min-width:110px}
 #elapsed{font:600 22px/1 ui-monospace,Consolas,monospace}
-.bar{width:130px;height:4px;background:var(--line);border-radius:2px;margin-top:4px;overflow:hidden}
+.bar{width:110px;height:4px;background:var(--line);border-radius:2px;margin-top:4px;overflow:hidden}
 .bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .5s}
 select,button,input[type=text]{font:inherit;color:var(--text);background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:7px 10px}
 button{cursor:pointer}
 button:disabled,select:disabled{opacity:.5;cursor:default}
-button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600;min-width:110px}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600;min-width:80px}
 button.primary.stop{background:var(--bad);border-color:var(--bad)}
 .hint{font-size:12px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .subbar{display:flex;align-items:center;gap:10px;min-width:0}
@@ -131,20 +136,19 @@ dialog h2{margin:0 0 10px;font-size:18px}
 </head>
 <body>
 <header>
-  <div><h1>Web Stress Test</h1><span class="dim" id="buildTag" style="font-size:12px;margin-left:6px"></span><a class="repo" href="https://github.com/myoung8223/wbcst/" target="_blank" rel="noopener">GitHub repository</a><span class="pill" id="testerTag" hidden style="margin-left:8px;vertical-align:2px;text-transform:none"></span><div id="devinfo" class="dim">Detecting hardware…</div></div>
-  <div class="spacer"></div>
-  <div class="timer"><span id="elapsed">0:00</span><div class="bar"><i id="prog"></i></div></div>
+  <div class="hleft"><div class="hrow"><h1>Web Stress Test</h1><span class="dim" id="buildTag" style="font-size:12px;margin-left:6px"></span><a class="repo" href="https://github.com/myoung8223/wbcst/" target="_blank" rel="noopener">GitHub repository</a><span class="pill" id="testerTag" hidden style="margin-left:8px;vertical-align:2px;text-transform:none"></span></div><div id="devinfo" class="dim">Detecting hardware…</div></div>
+  <div class="hctl"><div class="timer"><span id="elapsed">0:00</span><div class="bar"><i id="prog"></i></div></div>
   <select id="dur" title="Test length">
-    <option value="0" selected>Run until stopped</option>
+    <option value="0">Run until stopped</option>
     <option value="60">1 minute</option><option value="300">5 minutes</option>
-    <option value="600">10 minutes</option><option value="900">15 minutes</option>
+    <option value="600" selected>10 minutes</option><option value="900">15 minutes</option>
     <option value="1800">30 minutes</option><option value="3600">60 minutes</option>
   </select>
-  <button id="startBtn" class="primary">Start test</button>
-  <button id="setBtn" title="Settings">⚙ Settings</button>
+  <button id="startBtn" class="primary">Start</button>
+  <button id="setBtn" title="Settings" aria-label="Settings">⚙</button>
   <button id="scrBtn" title="Full-screen test patterns for dead pixels and damage">Screen</button>
   <button id="perBtn" title="Test webcam, microphone, speakers, keyboard and touch">Peripherals</button>
-  <button id="repBtn" disabled title="Health report for everything tested so far">Report</button>
+  <button id="repBtn" disabled title="Health report for everything tested so far">Report</button></div>
 </header>
 <div id="secNote" class="hint" hidden>⚠ Opened over plain <b>http://</b>, so the browser blocks <b>screen wake lock, webcam, microphone, battery and thermal readings</b> (they need https://). The device may dim and lock during long tests. Easiest fix: <a id="secLink" class="repo" style="margin:0" href="#">open the https tester pointed at this server</a>. Other options are in the README.</div>
 <div class="subbar"><div id="hint" class="hint">Tips: close other tabs, keep this tab in front, and test for 10+ minutes so heat builds up. Unplug to measure battery drain; plug in to check the charger.</div><div id="quick" title="Choose which tests run (same as the checkboxes on each tile)"></div></div>
@@ -298,7 +302,7 @@ async function devInfo(){
   const mem=DEV.mem?(DEV.mem>=8?'8+ GB':DEV.mem+' GB')+' RAM':'RAM size hidden by browser (assuming 4 GB)';
   const miss=[];if(!navigator.getBattery)miss.push('battery');if(!('PressureObserver' in window))miss.push('thermal');if(!navigator.deviceMemory)miss.push('RAM size');
   if(miss.length)txt('hint','Note: this browser doesn\u2019t expose '+miss.join(', ')+' info. Chrome or Edge gives the most complete results.');
-  txt('devinfo',`${DEV.os} · ${DEV.threads||'?'} CPU threads · ${mem} · ${DEV.gpu.replace(/^ANGLE \(|\)$/g,'')}${q}`);
+  txt('devinfo',`${DEV.os} · ${DEV.threads||'?'} CPU threads · ${mem} · ${DEV.gpu.replace(/^ANGLE \(|\)$/g,'')}${q}`);$('devinfo').title=$('devinfo').textContent; // full text on hover when it's cut short
 }
 
 /* ---------- sparkline ---------- */
@@ -576,7 +580,7 @@ async function stop(reason){
   st.cpu.workers.forEach(w=>w.terminate());if(st.ram.w)st.ram.w.terminate();cancelAnimationFrame(st.gpu.raf);
   try{if(st.sys.po)st.sys.po.disconnect();}catch(e){}
   try{if(wakeLock)await wakeLock.release();}catch(e){}wakeLock=null;
-  const b=$('startBtn');b.disabled=true;b.textContent='Finishing…';
+  const b=$('startBtn');b.disabled=true;b.textContent='Wait…';
   if(st.disk.w){st.disk.w.postMessage({cmd:'stop'});const t=performance.now();while(!st.disk.stopped&&performance.now()-t<4000)await sleep(100);st.disk.w.terminate();}
   setRunningUI(false);
   LAST=assess(st);updRep();applyTileStatus(st,LAST);showReport(repBase());
@@ -633,7 +637,7 @@ function resetTiles(st){
   document.querySelectorAll('canvas.spark').forEach(c=>{const x=c.getContext('2d');x.setTransform(1,0,0,1,0,0);x.clearRect(0,0,c.width,c.height);});
 }
 function setRunningUI(on){
-  const b=$('startBtn');b.disabled=false;b.textContent=on?'Stop test':'Start test';b.classList.toggle('stop',on);
+  const b=$('startBtn');b.disabled=false;b.textContent=on?'Stop':'Start';b.classList.toggle('stop',on);
   for(const k of KEYS)$('en-'+k).disabled=on;if(!on)netTile();syncQuick();$('dur').disabled=on;$('setBtn').disabled=on;updRep();
   txt('hint',on?'Testing… keep this tab in front (background tabs get throttled). Press Stop at any time for the health report.':'Tips: close other tabs, keep this tab in front, and test for 10+ minutes so heat builds up. Unplug to measure battery drain; plug in to check the charger.');
 }
@@ -1239,6 +1243,17 @@ for(const k of KEYS)$('en-'+k).onchange=()=>{if(!(S&&S.running)){$('t-'+k).class
   for(const k of KEYS)$('q-'+k).onchange=()=>{const t=$('en-'+k);if(t.disabled)return;t.checked=$('q-'+k).checked;t.onchange();};}
 syncQuick();
 txt('buildTag','Build '+BUILD);document.title='Web Stress Test (Build '+BUILD+')';
+/* Test duration: ?d= (this visit) > last choice (remembered) > 10 minutes */
+{const sel=$('dur'),KEY='cbstress-dur';
+  const label=sec=>sec===0?'Run until stopped':sec<60?`${sec} seconds`:sec%3600===0?`${sec/3600} hour${sec===3600?'':'s'}`:`${+(sec/60).toFixed(1)} minutes`;
+  const setDur=sec=>{if(![...sel.options].some(o=>+o.value===sec)){const o=new Option(label(sec),sec),after=[...sel.options].find(x=>+x.value>sec&&+x.value!==0);sel.add(o,after||null);}sel.value=String(sec);};
+  const parseD=v=>{v=String(v).trim().toLowerCase();if(['0','u','unlimited','inf','until','stop','stopped'].includes(v))return 0;
+    const m=v.match(/^(\d+(?:\.\d+)?)\s*(h|hr|hrs|hours?|m|min|mins|minutes?|s|sec|secs|seconds?)?$/);if(!m)return null;
+    const n=parseFloat(m[1]),u=(m[2]||'m')[0];const sec=Math.round(u==='h'?n*3600:u==='s'?n:n*60);return sec>0?Math.min(sec,86400):null;};
+  let pick=null;if(QP.has('d'))pick=parseD(QP.get('d'));
+  if(pick===null){try{const v=localStorage.getItem(KEY);if(v!==null&&/^\d+$/.test(v))pick=+v;}catch(e){}}
+  if(pick!==null)setDur(pick);
+  sel.addEventListener('change',()=>{try{localStorage.setItem(KEY,sel.value);}catch(e){}});}
 devInfo();resetTiles(null);showTester();probeServer();
 if(!window.isSecureContext){$('secNote').hidden=false;{const pth=location.pathname.replace(/[^\/]*$/,''),nts=location.host+(pth==='/'?'':pth),q=new URLSearchParams({nts});if(TESTER)q.set('t',TESTER);$('secLink').href='https://myoung8223.github.io/wbcst/?'+q;}txt('camInfo','Unavailable over http:// (browser security rule). Use https:// or a local copy.');txt('micInfo','Unavailable over http:// (browser security rule). Use https:// or a local copy.');$('camBtn').disabled=$('micBtn').disabled=true;}
 </script>
