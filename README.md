@@ -14,7 +14,7 @@ It was built for checking school Chromebooks, but it works on any computer with 
 - **Peripherals check**: webcam, microphone, speakers, keyboard, and trackpad/touch
 - **Screen test**: fullscreen patterns for dead/stuck pixels, backlight bleed, impact damage and banding, plus a touchscreen dead-zone test
 - **Power & thermal monitor** (always on): battery drain and charger check, thermal pressure, and UI freezes, tracked during every run
-- **Report export**: one-page PDF, PNG image, plain text, or copy to clipboard
+- **Report export**: one-page PDF; PNG image, full-color or compact **PNG-8** (256 colors, about 70% smaller, looks the same); plain text (TXT); or copy to clipboard
 - **Private**: everything runs in the browser, results are never uploaded, and no third-party services are contacted
 
 ## Quick start

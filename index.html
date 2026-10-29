@@ -25,6 +25,11 @@ button:disabled,select:disabled{opacity:.5;cursor:default}
 button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600;min-width:110px}
 button.primary.stop{background:var(--bad);border-color:var(--bad)}
 .hint{font-size:12px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.subbar{display:flex;align-items:center;gap:10px;min-width:0}
+.subbar #hint{flex:1;min-width:0}
+#quick{display:flex;gap:6px;flex:none;flex-wrap:wrap}
+#quick label{display:flex;align-items:center;gap:5px;font-size:13px;font-weight:600;background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:3px 9px;cursor:pointer;user-select:none}
+#quick label.dis{opacity:.45;cursor:default}
 #secNote{color:var(--warn);white-space:normal}
 #secNote[hidden]{display:none}
 main{flex:1;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(2,1fr);gap:8px;min-height:0}
@@ -41,8 +46,11 @@ main{flex:1;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:
 .stats{display:grid;grid-template-columns:auto 1fr auto 1fr;gap:1px 8px;font-size:12px;color:var(--dim)}
 .stats b{color:var(--text);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 canvas.spark{width:100%;flex:1;min-height:28px;display:block}
-#gpuCanvas{width:100%;flex:1;min-height:40px;object-fit:cover;border-radius:6px;background:#000;display:block}
-#t-gpu canvas.spark{flex:none;height:32px}
+/* GPU rendering shown as a dim backdrop with the FPS graph drawn over it. The canvas must stay on screen
+   (not display:none or offscreen): presenting frames is what paces the loop to the GPU's real speed. */
+.gwrap{position:relative;flex:1;min-height:28px}
+.gwrap canvas{position:absolute;inset:0;width:100%;height:100%}
+#gpuCanvas{object-fit:cover;opacity:.25;border-radius:6px;pointer-events:none}
 .tile.off{opacity:.45}
 .pill{font-size:10px;font-weight:600;color:var(--dim);border:1px solid var(--line);border-radius:9px;padding:1px 7px;text-transform:uppercase;letter-spacing:.3px}
 dialog{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:16px;max-width:min(1100px,96vw);max-height:94vh;overflow:auto}
@@ -139,7 +147,7 @@ dialog h2{margin:0 0 10px;font-size:18px}
   <button id="repBtn" disabled title="Health report for everything tested so far">Report</button>
 </header>
 <div id="secNote" class="hint" hidden>⚠ Opened over plain <b>http://</b>, so the browser blocks <b>screen wake lock, webcam, microphone, battery and thermal readings</b> (they need https://). The device may dim and lock during long tests. Easiest fix: <a id="secLink" class="repo" style="margin:0" href="#">open the https tester pointed at this server</a>. Other options are in the README.</div>
-<div id="hint" class="hint">Tips: close other tabs, keep this tab in front, and test for 10+ minutes so heat builds up. Unplug to measure battery drain; plug in to check the charger.</div>
+<div class="subbar"><div id="hint" class="hint">Tips: close other tabs, keep this tab in front, and test for 10+ minutes so heat builds up. Unplug to measure battery drain; plug in to check the charger.</div><div id="quick" title="Choose which tests run (same as the checkboxes on each tile)"></div></div>
 
 <main>
   <section class="tile" id="t-cpu">
@@ -153,8 +161,7 @@ dialog h2{margin:0 0 10px;font-size:18px}
     <div class="th"><label><input type="checkbox" id="en-gpu" checked>GPU</label><span class="dot" id="d-gpu"></span><span class="st" id="s-gpu">Idle</span></div>
     <div class="big"><span id="gpu-big">–</span><small>FPS</small></div>
     <div class="stats"><span>vs initial</span><b id="gpu-pct">–</b><span>Checks</span><b id="gpu-chk">–</b><span>Load</span><b id="gpu-load">–</b><span>Resets</span><b id="gpu-lost">0</b></div>
-    <canvas id="gpuCanvas" width="1280" height="720"></canvas>
-    <canvas class="spark" id="gpu-spark"></canvas>
+    <div class="gwrap"><canvas id="gpuCanvas" width="1280" height="720"></canvas><canvas class="spark" id="gpu-spark"></canvas></div>
   </section>
 
   <section class="tile" id="t-ram">
@@ -256,12 +263,12 @@ dialog h2{margin:0 0 10px;font-size:18px}
 
 <dialog id="repDlg">
   <div id="repBody"></div>
-  <div class="btns"><button id="repCopy">Copy report</button><button id="repPdf">Save PDF</button><button id="repPng">Save PNG</button><button id="repSave">Save .txt</button><button id="repClose" class="primary">Close</button></div>
+  <div class="btns"><button id="repCopy">Copy report</button><button id="repPdf">Save PDF</button><button id="repPng" title="Full-color PNG">Save PNG</button><button id="repPng8" title="256-color PNG: about 70% smaller, looks the same">Save PNG-8</button><button id="repSave">Save TXT</button><button id="repClose" class="primary">Close</button></div>
 </dialog>
 
 <script>
 'use strict';
-const BUILD=17; // increment with every release
+const BUILD=18; // increment with every release
 /* ---------- helpers ---------- */
 const $=id=>document.getElementById(id);
 const txt=(id,v)=>{const e=$(id);if(e)e.textContent=v;};
@@ -295,7 +302,7 @@ async function devInfo(){
 }
 
 /* ---------- sparkline ---------- */
-function spark(id,data,color,ref,data2,color2,names){
+function spark(id,data,color,ref,data2,color2,names,unit){
   const c=$(id);if(!c)return;const dpr=window.devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;if(!w||!h)return;
   const W=Math.round(w*dpr),H=Math.round(h*dpr);if(c.width!==W||c.height!==H){c.width=W;c.height=H;}
   const x=c.getContext('2d');x.setTransform(dpr,0,0,dpr,0,0);x.clearRect(0,0,w,h);
@@ -303,6 +310,9 @@ function spark(id,data,color,ref,data2,color2,names){
   const max=Math.max(...v,...v2,ref||0)*1.12||1,step=w/(n-1),off=n-d.length;
   const Y=val=>h-2-(val/max)*(h-6);
   if(ref){x.strokeStyle='rgba(139,147,165,.5)';x.setLineDash([4,4]);x.beginPath();x.moveTo(0,Y(ref));x.lineTo(w,Y(ref));x.stroke();x.setLineDash([]);}
+  if(ref){ // label the dashed starting-speed line at its left end (below the line if it sits near the top)
+    const lab='initial '+fmt(ref,ref<10?1:0)+(unit?' '+unit:'');x.font='10px system-ui';const tw=x.measureText(lab).width,ly=Y(ref)<24?Y(ref)+13:Y(ref)-4;
+    x.fillStyle='rgba(24,27,34,.75)';x.fillRect(1,ly-10,tw+6,13);x.fillStyle='rgba(170,177,192,.95)';x.fillText(lab,4,ly);}
   const line=(arr,col,o)=>{x.strokeStyle=col;x.lineWidth=1.6;x.beginPath();let on=false;
     arr.forEach((val,i)=>{if(val==null||!isFinite(val)){on=false;return;}const px=(i+o)*step,py=Y(val);if(on)x.lineTo(px,py);else{x.moveTo(px,py);on=true;}});x.stroke();};
   if(d2.length)line(d2,color2,n-d2.length);line(d,color,off);
@@ -461,6 +471,9 @@ async function probeServer(){
   }catch(e){none(SRV.lna?`Couldn't reach ${b} from this https page. In Chrome, allow "local network" access for this site (lock icon → Site settings); other browsers don't allow it. Also check the server is online.`
     :CFG.net==='custom'?`Couldn't reach ${b} — check the address and that it's online.`:'No test server here. Set one in ⚙ Settings, or add ?nts=<server> to the address.');}
 }
+function syncQuick(){ // keep the header toggles in step with the tile checkboxes
+  for(const k of KEYS){const q=$('q-'+k),t=$('en-'+k);if(!q)return;q.checked=t.checked;q.disabled=t.disabled;$('ql-'+k).classList.toggle('dis',t.disabled);
+    $('ql-'+k).title=k==='net'&&SRV.state!=='ok'&&!(S&&S.running)?'No network test server found':'';}}
 function netTile(){ // reflect server availability on the Network tile (only when idle)
   if(S&&S.running)return;const cb=$('en-net'),ok=SRV.state==='ok';
   if(!ok){if(!cb.disabled)SRV.wasOn=cb.checked;cb.checked=false;cb.disabled=true;}
@@ -468,6 +481,7 @@ function netTile(){ // reflect server availability on the Network tile (only whe
   $('t-net').classList.toggle('off',!cb.checked);live('net',cb.checked?'idle':'off');
   txt('net-srv',ok?SRV.host:SRV.state==='checking'?'checking…':'none');
   if(SRV.state!=='checking'||!SRV.lna)txt('net-msg',ok?'':SRV.state==='checking'?'Looking for a test server…':SRV.msg);
+  syncQuick();
 }
 let UPBUF=null;function upBuf(n){if(!UPBUF){UPBUF=new Uint8Array(6*1048576);for(let i=0;i<UPBUF.length;i+=65536)crypto.getRandomValues(UPBUF.subarray(i,i+65536));}return UPBUF.subarray(0,n);}
 async function timedGet(url,timeout,st){
@@ -589,10 +603,10 @@ function render(st,el){
   $('prog').style.width=st.dur?Math.min(100,el/st.dur*100)+'%':'100%';
   if(st.en.cpu){const c=st.cpu,h=c.hist,cur=last(h),b=base(h);
     txt('cpu-big',fmt(cur,0));txt('cpu-thr',`${c.n} of ${c.t}`);txt('cpu-base',b?fmt(b,0):'measuring…');txt('cpu-pct',b&&cur?fmt(cur/b*100,0)+'%':'–');txt('cpu-err',c.errs+(c.crashed?` (+${c.crashed} crash)`:''));
-    live('cpu',c.errs||c.crashed?'bad':'run');spark('cpu-spark',h,'#4f8cff',b);}
+    live('cpu',c.errs||c.crashed?'bad':'run');spark('cpu-spark',h,'#4f8cff',b,null,null,null,'Mops/s');}
   if(st.en.gpu){const g=st.gpu,h=g.hist,cur=last(h),b=base(h);
     txt('gpu-big',g.err?'n/a':fmt(cur,0));txt('gpu-pct',b&&cur?fmt(cur/b*100,0)+'%':'–');txt('gpu-chk',g.checks?`${g.checks-g.mism}/${g.checks} OK`:'pending');txt('gpu-load',CFG.gpu);txt('gpu-lost',g.ctxLost);
-    live('gpu',g.err||g.ctxLost||g.mism?'bad':'run');spark('gpu-spark',h,'#b06cff',b);}
+    live('gpu',g.err||g.ctxLost||g.mism?'bad':'run');spark('gpu-spark',h,'#b06cff',b,null,null,null,'FPS');}
   if(st.en.ram){const r=st.ram;
     txt('ram-big',fmt(r.alloc));txt('ram-tgt',fmt(r.target)+' MB');txt('ram-bw',r.done?fmt(last(r.hist),0)+' MB/s':'allocating…');txt('ram-pass',r.pass);txt('ram-err',r.errs);
     live('ram',r.errs||r.crashed?'bad':r.allocErr?'warn':'run');spark('ram-spark',r.hist,'#2ecc71');}
@@ -620,7 +634,7 @@ function resetTiles(st){
 }
 function setRunningUI(on){
   const b=$('startBtn');b.disabled=false;b.textContent=on?'Stop test':'Start test';b.classList.toggle('stop',on);
-  for(const k of KEYS)$('en-'+k).disabled=on;if(!on)netTile();$('dur').disabled=on;$('setBtn').disabled=on;updRep();
+  for(const k of KEYS)$('en-'+k).disabled=on;if(!on)netTile();syncQuick();$('dur').disabled=on;$('setBtn').disabled=on;updRep();
   txt('hint',on?'Testing… keep this tab in front (background tabs get throttled). Press Stop at any time for the health report.':'Tips: close other tabs, keep this tab in front, and test for 10+ minutes so heat builds up. Unplug to measure battery drain; plug in to check the charger.');
 }
 function applyTileStatus(st,rep){
@@ -1164,6 +1178,35 @@ function pdfFromJpegs(imgs){ // minimal PDF: one full-page JPEG per US Letter pa
   push(x+`trailer\n<< /Size ${total} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`);
   return new Blob(parts,{type:'application/pdf'});
 }
+/* ---------- PNG-8: 256-colour palette PNG (browsers can only export full-colour PNG, so we encode it here) ---------- */
+const CRC_T=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0;}return t;})();
+function crc32(parts){let c=0xFFFFFFFF;for(const u of parts)for(let i=0;i<u.length;i++)c=CRC_T[(c^u[i])&255]^(c>>>8);return(c^0xFFFFFFFF)>>>0;}
+function quantize256(rgba){
+  // Report images are mostly flat colours plus soft anti-aliased edges. The most common colours (backgrounds,
+  // text, badges, graph lines) get exact palette slots; the remaining rare edge shades share the other slots
+  // via median cut, and every colour then maps to its nearest palette entry.
+  const hist=new Map();for(let i=0;i<rgba.length;i+=4){const k=(rgba[i]<<16)|(rgba[i+1]<<8)|rgba[i+2];hist.set(k,(hist.get(k)||0)+1);}
+  const cols=[...hist.entries()].map(([k,n])=>[k>>16&255,k>>8&255,k&255,n]).sort((a,b)=>b[3]-a[3]);
+  let pal;
+  if(cols.length<=256)pal=cols.map(c=>[c[0],c[1],c[2]]);
+  else{const FIX=96,fixed=cols.slice(0,FIX),rest=cols.slice(FIX);let boxes=[rest];
+    while(boxes.length<256-FIX){let bi=-1,best=0,bc=0;
+      boxes.forEach((b,i)=>{if(b.length<2)return;for(let ch=0;ch<3;ch++){let lo=255,hi=0;for(const c of b){if(c[ch]<lo)lo=c[ch];if(c[ch]>hi)hi=c[ch];}if(hi-lo>best){best=hi-lo;bi=i;bc=ch;}}});
+      if(bi<0)break;const b=boxes[bi].slice().sort((x,y)=>x[bc]-y[bc]),mid=b.length>>1;boxes.splice(bi,1,b.slice(0,mid),b.slice(mid));}
+    pal=fixed.map(c=>[c[0],c[1],c[2]]).concat(boxes.map(b=>{let r=0,g=0,bl=0,w=0;for(const c of b){r+=c[0]*c[3];g+=c[1]*c[3];bl+=c[2]*c[3];w+=c[3];}return[Math.round(r/w),Math.round(g/w),Math.round(bl/w)];}));}
+  const map=new Map();for(const c of cols){let bi=0,bd=1e9;for(let i=0;i<pal.length;i++){const p=pal[i],d=(p[0]-c[0])**2+(p[1]-c[1])**2+(p[2]-c[2])**2;if(d<bd){bd=d;bi=i;if(!d)break;}}map.set((c[0]<<16)|(c[1]<<8)|c[2],bi);}
+  return{pal,map};
+}
+async function png8Blob(cv){
+  const W=cv.width,H=cv.height,px=cv.getContext('2d').getImageData(0,0,W,H).data,{pal,map}=quantize256(px);
+  const raw=new Uint8Array((W+1)*H);for(let y=0,o=0,i=0;y<H;y++){raw[o++]=0;for(let x=0;x<W;x++,i+=4)raw[o++]=map.get((px[i]<<16)|(px[i+1]<<8)|px[i+2]);} // filter 0 per row
+  const z=new Uint8Array(await new Response(new Blob([raw]).stream().pipeThrough(new CompressionStream('deflate'))).arrayBuffer()); // zlib, as PNG requires
+  const enc=new TextEncoder(),out=[new Uint8Array([137,80,78,71,13,10,26,10])];
+  const chunk=(type,data)=>{const t=enc.encode(type),len=new Uint8Array(4),crc=new Uint8Array(4);new DataView(len.buffer).setUint32(0,data.length);new DataView(crc.buffer).setUint32(0,crc32([t,data]));out.push(len,t,data,crc);};
+  const ih=new Uint8Array(13),dv=new DataView(ih.buffer);dv.setUint32(0,W);dv.setUint32(4,H);ih.set([8,3,0,0,0],8); // 8-bit, palette
+  chunk('IHDR',ih);chunk('PLTE',new Uint8Array(pal.flat()));chunk('IDAT',z);chunk('IEND',new Uint8Array(0));
+  return new Blob(out,{type:'image/png'});
+}
 const toBlob=(cv,t,q)=>new Promise((res,rej)=>cv.toBlob(b=>b?res(b):rej(new Error('image encoding failed')),t,q));
 function repName(ext,R){const d=R.date,p=n=>String(n).padStart(2,'0');const tg=(R.tester||'').replace(/[^A-Za-z0-9_-]+/g,'').slice(0,20);return`stress-report-${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${tg?'-'+tg:''}.${ext}`;}
 function dlBlob(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),10000);}
@@ -1171,6 +1214,7 @@ async function saveVisual(kind,btn){
   const lbl=btn.textContent;btn.disabled=true;btn.textContent='Rendering…';
   try{await sleep(30);const b=repBase(),R=Object.assign({},b,summarize(b));
     if(kind==='png'){const[cv]=renderReport(R,Infinity);dlBlob(await toBlob(cv,'image/png'),repName('png',R));}
+    else if(kind==='png8'){const[cv]=renderReport(R,Infinity);dlBlob(await png8Blob(cv),repName('png',R));}
     else{const imgs=[];for(const cv of renderReport(R,2200)){const b=await toBlob(cv,'image/jpeg',0.92);imgs.push({w:cv.width,h:cv.height,data:new Uint8Array(await b.arrayBuffer())});}dlBlob(pdfFromJpegs(imgs),repName('pdf',R));}
   }catch(e){alert('Could not create the file: '+(e&&e.message||e));}
   finally{btn.disabled=false;btn.textContent=lbl;}
@@ -1184,11 +1228,16 @@ $('repCopy').onclick=()=>copyText(reportText(repBase()),$('repCopy'),'Copy repor
 $('repSave').onclick=()=>{const b=repBase();dlBlob(new Blob([reportText(b)],{type:'text/plain'}),repName('txt',b));};
 $('repPdf').onclick=()=>saveVisual('pdf',$('repPdf'));
 $('repPng').onclick=()=>saveVisual('png',$('repPng'));
+$('repPng8').onclick=()=>saveVisual('png8',$('repPng8'));
 $('setBtn').onclick=()=>{$('cfg-gpu').value=CFG.gpu;$('cfg-ram').value=CFG.ramPct;$('cfg-disk').value=CFG.diskMB;$('cfg-net').value=CFG.net;$('cfg-url').value=CFG.netUrl;$('cfg-tester').value=TESTER;$('setDlg').showModal();};
 $('setCancel').onclick=()=>$('setDlg').close();
 $('setSave').onclick=()=>{CFG.gpu=$('cfg-gpu').value;CFG.ramPct=+$('cfg-ram').value;CFG.diskMB=+$('cfg-disk').value;CFG.net=$('cfg-net').value;CFG.netUrl=ntsToUrl($('cfg-url').value);TESTER=CFG.tester=cleanName($('cfg-tester').value);showTester();
   try{localStorage.setItem('cbstress-cfg',JSON.stringify(CFG));}catch(e){}txt('gpu-load',CFG.gpu);$('setDlg').close();probeServer();};
-for(const k of KEYS)$('en-'+k).onchange=()=>{if(!(S&&S.running)){$('t-'+k).classList.toggle('off',!$('en-'+k).checked);live(k,$('en-'+k).checked?'idle':'off');}};
+for(const k of KEYS)$('en-'+k).onchange=()=>{if(!(S&&S.running)){$('t-'+k).classList.toggle('off',!$('en-'+k).checked);live(k,$('en-'+k).checked?'idle':'off');}syncQuick();};
+{const QN={cpu:'CPU',gpu:'GPU',ram:'RAM',disk:'Storage',net:'Network'};
+  $('quick').innerHTML=KEYS.map(k=>`<label id="ql-${k}"><input type="checkbox" id="q-${k}">${QN[k]}</label>`).join('');
+  for(const k of KEYS)$('q-'+k).onchange=()=>{const t=$('en-'+k);if(t.disabled)return;t.checked=$('q-'+k).checked;t.onchange();};}
+syncQuick();
 txt('buildTag','Build '+BUILD);document.title='Web Stress Test (Build '+BUILD+')';
 devInfo();resetTiles(null);showTester();probeServer();
 if(!window.isSecureContext){$('secNote').hidden=false;{const pth=location.pathname.replace(/[^\/]*$/,''),nts=location.host+(pth==='/'?'':pth),q=new URLSearchParams({nts});if(TESTER)q.set('t',TESTER);$('secLink').href='https://myoung8223.github.io/wbcst/?'+q;}txt('camInfo','Unavailable over http:// (browser security rule). Use https:// or a local copy.');txt('micInfo','Unavailable over http:// (browser security rule). Use https:// or a local copy.');$('camBtn').disabled=$('micBtn').disabled=true;}
