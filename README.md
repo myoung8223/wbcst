@@ -1,4 +1,4 @@
-# Web Stress Test
+# Web-Based Computer Stress Test (WBCST)
 
 A browser-based hardware stress test and health check for laptops, desktops and Chromebooks. It's a single HTML file with no install, no database and no external libraries. Everything except the network test runs without a server. Open it in a browser, run the tests, and get a health report you can save as PDF, PNG or text.
 

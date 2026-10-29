@@ -1,6 +1,6 @@
 # Raspberry Pi test server setup
 
-This guide turns a Raspberry Pi into a dedicated LAN server for Web Stress Test. The Pi serves the test page itself and runs the network test, using `down.php` and `up.php`. Devices on your network then open `http://wbcst.local/`, or the Pi's IP address, and get the full tester, including the network test. A few browser features need extra setup over plain `http://`; see [Plain `http://` limitations](#plain-http-limitations-and-how-to-lift-them).
+This guide turns a Raspberry Pi into a dedicated LAN server for Web-Based Computer Stress Test. The Pi serves the test page itself and runs the network test, using `down.php` and `up.php`. Devices on your network then open `http://wbcst.local/`, or the Pi's IP address, and get the full tester, including the network test. A few browser features need extra setup over plain `http://`; see [Plain `http://` limitations](#plain-http-limitations-and-how-to-lift-them).
 
 The setup uses Apache with PHP-FPM, without a database, and is hardened for this single job.
 
@@ -88,7 +88,7 @@ The test scripts never use sessions, form parsing or file uploads, so turn them 
 
 ```sh
 sudo tee /etc/php/$PHPV/fpm/conf.d/99-wbcst.ini >/dev/null <<'EOF'
-; Hardening for a dedicated Web Stress Test server
+; Hardening for a dedicated Web-Based Computer Stress Test server
 expose_php = Off
 display_errors = Off
 allow_url_fopen = Off

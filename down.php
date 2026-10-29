@@ -1,5 +1,5 @@
 <?php
-// Web Stress Test - network download/latency endpoint.
+// Web-Based Computer Stress Test - network download/latency endpoint.
 // GET down.php?bytes=N  ->  N bytes of random data (bytes=0 is used for latency).
 // Place next to index.html on any web server with PHP; the page finds it automatically.
 header('Access-Control-Allow-Origin: *');
