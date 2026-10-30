@@ -6,6 +6,12 @@ It was built for checking school Chromebooks, but it works on any computer with 
 
 *Coded by Claude Opus 5.5 (Medium). See [Credits](#credits).*
 
+<p align="center">
+<a href="images/stress-test.png"><img src="images/stress-test.png" width="32%" alt="Stress Test"></a>
+<a href="images/peripherals.png"><img src="images/peripherals.png" width="32%" alt="Peripherals"></a>
+<a href="images/report.png"><img src="images/report.png" width="32%" alt="Report"></a>
+</p>
+
 ## Features
 
 - **Stress tests** for CPU, GPU, RAM and storage, plus an optional network test against your own server (a Raspberry Pi works well; see [RPI-SETUP.md](RPI-SETUP.md)), with live readings and graphs on a single screen
