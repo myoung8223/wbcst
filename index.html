@@ -12,11 +12,10 @@ body{display:flex;flex-direction:column;height:100vh;padding:10px;gap:8px}
 header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .hleft{flex:1 1 0;min-width:240px}
 .hrow{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#devinfo{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hctl{display:flex;align-items:center;gap:8px;flex:none}
 #setBtn{font-size:16px;padding:5px 11px}
 h1{font-size:18px;line-height:1.2;margin:0;font-weight:650;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.repo{font-size:12px;margin-left:8px;color:var(--accent);vertical-align:2px}
+.repo{font-size:12px;margin-left:4px;color:var(--accent)}
 .repo:hover{text-decoration:underline}
 .dim{color:var(--dim);font-size:12px}
 .spacer{flex:1}
@@ -41,7 +40,11 @@ main{flex:1;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:
 .tile{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px 11px;display:flex;flex-direction:column;gap:5px;min-height:0;min-width:0;overflow:hidden}
 .th{display:flex;align-items:center;gap:8px;font-weight:600}
 .th label{display:flex;align-items:center;gap:6px;cursor:pointer}
-.th .st{margin-left:auto;font-size:12px;font-weight:600;color:var(--dim)}
+.th .st{margin-left:auto;font-size:12px;font-weight:600;color:var(--dim);flex:none}
+.th label,.th .dot{flex:none}
+.spec{font-size:11px;font-weight:500;color:var(--dim);background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:1px 7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.spec[hidden]{display:none}
+#osTag .spec{display:inline-block;overflow:visible;vertical-align:baseline;margin-left:6px;line-height:1.35} /* align by text, like the rest of the line */
 .dot{width:10px;height:10px;border-radius:50%;background:var(--idle);flex:none}
 .dot.run{background:var(--accent);animation:pulse 1.2s infinite}
 .dot.ok{background:var(--ok)}.dot.warn{background:var(--warn)}.dot.bad{background:var(--bad)}
@@ -136,7 +139,7 @@ dialog h2{margin:0 0 10px;font-size:18px}
 </head>
 <body>
 <header>
-  <div class="hleft"><h1>Web-Based Computer Stress Test</h1><div class="hrow"><span class="dim" id="buildTag" style="font-size:12px"></span><a class="repo" href="https://github.com/myoung8223/wbcst/" target="_blank" rel="noopener">GitHub repository</a><span class="pill" id="testerTag" hidden style="margin-left:8px;vertical-align:2px;text-transform:none"></span></div><div id="devinfo" class="dim">Detecting hardware…</div></div>
+  <div class="hleft"><h1>Web-Based Computer Stress Test</h1><div class="hrow"><span class="dim" id="buildTag" style="font-size:12px"></span><a class="repo" href="https://github.com/myoung8223/wbcst/" target="_blank" rel="noopener">GitHub repository</a><span id="osTag"></span><span class="pill" id="testerTag" hidden style="margin-left:8px;vertical-align:2px;text-transform:none"></span></div></div>
   <div class="hctl"><div class="timer"><span id="elapsed">0:00</span><div class="bar"><i id="prog"></i></div></div>
   <select id="dur" title="Test length">
     <option value="0">Run until stopped</option>
@@ -155,35 +158,35 @@ dialog h2{margin:0 0 10px;font-size:18px}
 
 <main>
   <section class="tile" id="t-cpu">
-    <div class="th"><label><input type="checkbox" id="en-cpu" checked>CPU</label><span class="dot" id="d-cpu"></span><span class="st" id="s-cpu">Idle</span></div>
+    <div class="th"><label><input type="checkbox" id="en-cpu" checked>CPU</label><span class="dot" id="d-cpu"></span><span class="spec" id="spec-cpu" hidden></span><span class="st" id="s-cpu">Idle</span></div>
     <div class="big"><span id="cpu-big">–</span><small>Mops/s</small></div>
     <div class="stats"><span>Workers</span><b id="cpu-thr">–</b><span>Initial</span><b id="cpu-base">–</b><span>vs initial</span><b id="cpu-pct">–</b><span>Errors</span><b id="cpu-err">0</b></div>
     <canvas class="spark" id="cpu-spark"></canvas>
   </section>
 
   <section class="tile" id="t-gpu">
-    <div class="th"><label><input type="checkbox" id="en-gpu" checked>GPU</label><span class="dot" id="d-gpu"></span><span class="st" id="s-gpu">Idle</span></div>
+    <div class="th"><label><input type="checkbox" id="en-gpu" checked>GPU</label><span class="dot" id="d-gpu"></span><span class="spec" id="spec-gpu" hidden></span><span class="st" id="s-gpu">Idle</span></div>
     <div class="big"><span id="gpu-big">–</span><small title="Billions of test operations per second (one op = one pass through the shader loop for one pixel)">Gops/s</small></div>
     <div class="stats"><span>vs initial</span><b id="gpu-pct">–</b><span>Checks</span><b id="gpu-chk">–</b><span>FPS</span><b id="gpu-fps">–</b><span>Load</span><b id="gpu-load">–</b><span>Resets</span><b id="gpu-lost">0</b></div>
     <div class="gwrap"><canvas id="gpuCanvas" width="1280" height="720"></canvas><canvas class="spark" id="gpu-spark"></canvas></div>
   </section>
 
   <section class="tile" id="t-ram">
-    <div class="th"><label><input type="checkbox" id="en-ram" checked>RAM</label><span class="dot" id="d-ram"></span><span class="st" id="s-ram">Idle</span></div>
+    <div class="th"><label><input type="checkbox" id="en-ram" checked>RAM</label><span class="dot" id="d-ram"></span><span class="spec" id="spec-ram" hidden></span><span class="st" id="s-ram">Idle</span></div>
     <div class="big"><span id="ram-big">–</span><small>MB under test</small></div>
     <div class="stats"><span>Target</span><b id="ram-tgt">–</b><span>Bandwidth</span><b id="ram-bw">–</b><span>Passes</span><b id="ram-pass">0</b><span>Errors</span><b id="ram-err">0</b></div>
     <canvas class="spark" id="ram-spark"></canvas>
   </section>
 
   <section class="tile" id="t-disk">
-    <div class="th"><label><input type="checkbox" id="en-disk" checked>Storage</label><span class="dot" id="d-disk"></span><span class="st" id="s-disk">Idle</span></div>
+    <div class="th"><label><input type="checkbox" id="en-disk" checked>Storage</label><span class="dot" id="d-disk"></span><span class="spec" id="spec-disk" hidden></span><span class="st" id="s-disk">Idle</span></div>
     <div class="big"><span id="disk-big">–</span><small style="color:#f5b301">MB/s write</small><span id="disk-read" style="margin-left:18px">–</span><small style="color:#7aa7ff">MB/s read</small></div>
     <div class="stats"><span>Phase</span><b id="disk-phase">–</b><span>Passes</span><b id="disk-pass">0</b><span>Errors</span><b id="disk-err">0</b><span>API</span><b id="disk-mode">–</b><span>File</span><b id="disk-size">–</b></div>
     <canvas class="spark" id="disk-spark"></canvas>
   </section>
 
   <section class="tile" id="t-net">
-    <div class="th"><label><input type="checkbox" id="en-net" checked>Network</label><span class="dot" id="d-net"></span><span class="st" id="s-net">Idle</span></div>
+    <div class="th"><label><input type="checkbox" id="en-net" checked>Network</label><span class="dot" id="d-net"></span><span class="spec" id="spec-net" hidden></span><span class="st" id="s-net">Idle</span></div>
     <div class="big"><span id="net-big">–</span><small>ms latency</small></div>
     <div class="stats"><span>Down</span><b id="net-dl">–</b><span>Up</span><b id="net-ul">–</b><span>Jitter</span><b id="net-jit">–</b><span>Failed</span><b id="net-loss">–</b><span>Server</span><b id="net-srv">–</b><span>Drops</span><b id="net-off">0</b></div>
     <div class="dim" id="net-msg" style="font-size:12px"></div>
@@ -191,7 +194,7 @@ dialog h2{margin:0 0 10px;font-size:18px}
   </section>
 
   <section class="tile" id="t-sys">
-    <div class="th"><span title="Passive monitor: adds no load, runs during every test">Power &amp; thermal</span><span class="pill" title="Passive monitor: adds no load, runs during every test">always on</span><span class="dot" id="d-sys"></span><span class="st" id="s-sys">Idle</span></div>
+    <div class="th"><span title="Passive monitor: adds no load, runs during every test">Power &amp; thermal</span><span class="pill" title="Passive monitor: adds no load, runs during every test">always on</span><span class="dot" id="d-sys"></span><span class="spec" id="spec-sys" hidden></span><span class="st" id="s-sys">Idle</span></div>
     <div class="big"><span id="sys-big">–</span><small>battery</small></div>
     <div class="stats"><span>Power</span><b id="sys-chg">–</b><span>Drain</span><b id="sys-drain">–</b><span>Thermal</span><b id="sys-pres">–</b><span>UI freeze</span><b id="sys-lag">–</b><span>Screen lock</span><b id="sys-wake">–</b><span>Background</span><b id="sys-hid">–</b></div>
     <canvas class="spark" id="sys-spark"></canvas>
@@ -272,7 +275,7 @@ dialog h2{margin:0 0 10px;font-size:18px}
 
 <script>
 'use strict';
-const BUILD=19; // increment with every release
+const BUILD=20; // increment with every release
 /* ---------- helpers ---------- */
 const $=id=>document.getElementById(id);
 const txt=(id,v)=>{const e=$(id);if(e)e.textContent=v;};
@@ -293,8 +296,15 @@ try{Object.assign(CFG,JSON.parse(localStorage.getItem('cbstress-cfg')||'{}'));}c
 const LOADS={medium:{iter:160,passes:2},high:{iter:320,passes:4},extreme:{iter:640,passes:8}};
 
 /* ---------- device info ---------- */
-const DEV={os:(navigator.userAgentData&&navigator.userAgentData.platform)||navigator.platform||'unknown OS',threads:navigator.hardwareConcurrency||0,mem:navigator.deviceMemory||0,gpu:'unknown',ua:navigator.userAgent};
+const DEV={os:osName(),browser:browserName(),threads:navigator.hardwareConcurrency||0,mem:navigator.deviceMemory||0,gpu:'unknown',ua:navigator.userAgent};
 function gpuName(){try{const g=document.createElement('canvas').getContext('webgl');if(!g)return'WebGL unavailable';const e=g.getExtension('WEBGL_debug_renderer_info');const r=e?g.getParameter(e.UNMASKED_RENDERER_WEBGL):g.getParameter(g.RENDERER);const l=g.getExtension('WEBGL_lose_context');if(l)l.loseContext();return String(r);}catch(e){return'unknown';}}
+function osName(){const ua=navigator.userAgent,p=(navigator.userAgentData&&navigator.userAgentData.platform)||navigator.platform||'';
+  if(/CrOS/.test(ua)||/chrome ?os/i.test(p))return'ChromeOS';if(/Android/i.test(ua))return'Android';if(/iPhone|iPad/.test(ua))return'iOS';
+  if(/^Win/i.test(p)||/Windows/.test(ua))return'Windows';if(/^Mac/i.test(p)||/Mac OS X/.test(ua))return'macOS';if(/Linux/i.test(p+ua))return'Linux';return p||'Unknown OS';}
+function browserName(){const ua=navigator.userAgent,b=navigator.userAgentData&&navigator.userAgentData.brands;
+  if(b){const pick=['Microsoft Edge','Opera','Brave','Google Chrome','Chromium'].map(n=>b.find(x=>x.brand===n)).find(Boolean);if(pick)return pick.brand.replace('Google ','').replace('Microsoft ','')+' '+pick.version;}
+  let m;if((m=ua.match(/Edg\/(\d+)/)))return'Edge '+m[1];if((m=ua.match(/Firefox\/(\d+)/)))return'Firefox '+m[1];if((m=ua.match(/Chrome\/(\d+)/)))return'Chrome '+m[1];
+  if((m=ua.match(/Version\/(\d+).*Safari/)))return'Safari '+m[1];return'';}
 async function devInfo(){
   DEV.gpu=gpuName();
   let q='';
@@ -302,7 +312,25 @@ async function devInfo(){
   const mem=DEV.mem?(DEV.mem>=8?'8+ GB':DEV.mem+' GB')+' RAM':'RAM size hidden by browser (assuming 4 GB)';
   const miss=[];if(!navigator.getBattery)miss.push('battery');if(!('PressureObserver' in window))miss.push('thermal');if(!navigator.deviceMemory)miss.push('RAM size');
   if(miss.length)txt('hint','Note: this browser doesn\u2019t expose '+miss.join(', ')+' info. Chrome or Edge gives the most complete results.');
-  txt('devinfo',`${DEV.os} · ${DEV.threads||'?'} CPU threads · ${mem} · ${DEV.gpu.replace(/^ANGLE \(|\)$/g,'')}${q}`);$('devinfo').title=$('devinfo').textContent; // full text on hover when it's cut short
+  const tag=(k,t,full)=>{const e=$('spec-'+k);if(!e)return;e.hidden=!t;e.textContent=t||'';e.title=full||t||'';};
+  tag('cpu',DEV.threads?`${DEV.threads} CPU threads`:'CPU threads unknown');
+  tag('gpu',cleanGpu(DEV.gpu),DEV.gpu);
+  tag('ram',DEV.mem?(DEV.mem>=8?'8+ GB RAM':DEV.mem+' GB RAM'):'RAM size hidden by browser','Browsers round installed RAM and report at most "8+ GB"');
+  tag('disk',DEV.freeMB!=null?fmt(DEV.freeMB/1024,1)+' GB available to browser':'','Storage the browser lets this page use (not the drive size)');
+  $('osTag').innerHTML=[DEV.os,DEV.browser].filter(Boolean).map(t=>`<span class="spec">${escH(t)}</span>`).join('');
+  // power: a fully-charged laptop on AC and a desktop with no battery look identical to a browser
+  if(!window.isSecureContext)tag('sys','Battery info needs https');
+  else if(!navigator.getBattery)tag('sys','Battery info hidden by browser');
+  else try{const b=await navigator.getBattery();const upd=()=>tag('sys',!b.charging||b.level<1?'Battery detected':'On AC power','A full battery on AC and no battery at all look the same to a browser');upd();b.addEventListener('chargingchange',upd);b.addEventListener('levelchange',upd);}catch(e){}
+  // network: connection type is only exposed on ChromeOS and Android
+  const nc=navigator.connection,ntag=()=>{const t={wifi:'Wi-Fi',ethernet:'Ethernet',cellular:'Cellular',wimax:'WiMAX',bluetooth:'Bluetooth',none:'Offline'}[nc&&nc.type];tag('net',t?t+' connection':'');};
+  ntag();if(nc&&nc.addEventListener)nc.addEventListener('change',ntag);
+}
+function cleanGpu(s){ // "ANGLE (Intel, Intel(R) UHD Graphics 770 (0x00004690) Direct3D11 vs_5_0 ps_5_0, D3D11)" -> "Intel UHD Graphics 770"
+  s=String(s||'').trim();const m=s.match(/^ANGLE \((.*)\)$/);
+  if(m){const parts=m[1].split(/,\s*(?![^()]*\))/);s=parts.length>=2?parts[1]:parts[0];}
+  s=s.replace(/ANGLE \w+ Renderer:\s*/i,'').replace(/\(0x[0-9a-f]+\)/gi,'').replace(/Direct3D\d+.*$/i,'').replace(/\((R|TM)\)/gi,'').replace(/^Mesa\s+/i,'').replace(/\s{2,}/g,' ').replace(/\s+\)/g,')').trim();
+  return s||'GPU unknown';
 }
 
 /* ---------- sparkline ---------- */
@@ -1263,7 +1291,7 @@ for(const k of KEYS)$('en-'+k).onchange=()=>{if(!(S&&S.running)){$('t-'+k).class
   $('quick').innerHTML=KEYS.map(k=>`<label id="ql-${k}"><input type="checkbox" id="q-${k}">${QN[k]}</label>`).join('');
   for(const k of KEYS)$('q-'+k).onchange=()=>{const t=$('en-'+k);if(t.disabled)return;t.checked=$('q-'+k).checked;t.onchange();};}
 syncQuick();
-txt('buildTag','Build '+BUILD);document.title='Web-Based Computer Stress Test (Build '+BUILD+')';
+txt('buildTag','Build '+BUILD+' ·');document.title='Web-Based Computer Stress Test (Build '+BUILD+')';
 /* Test duration: ?d= (this visit) > last choice (remembered) > 10 minutes */
 {const sel=$('dur'),KEY='cbstress-dur';
   const label=sec=>sec===0?'Run until stopped':sec<60?`${sec} seconds`:sec%3600===0?`${sec/3600} hour${sec===3600?'':'s'}`:`${+(sec/60).toFixed(1)} minutes`;
