@@ -39,7 +39,7 @@ Settings can be passed in the page address, which is handy for bookmarks, or a l
 | Parameter | Meaning | Examples |
 |---|---|---|
 | `nts` | **Network test server**, the server running `down.php` and `up.php`. A bare name gets `.local` added. Plain `http://` is assumed unless you write `https://`. A port and folder may be included. | `nts=wbcst` → `http://wbcst.local/`<br>`nts=192.168.1.50`<br>`nts=wbcst:8080/tester/` |
-| `t` | **Tester**: the technician's name or initials. Shown in the header, on every report, and in report file names. | `t=Mike`, `t=MGY` |
+| `t` | **Tester**: the technician's name or initials. Shown in the header, on every report, and in report file names. | `t=John`, `t=JQD` |
 | `d` | **Duration** of the stress test. A plain number is minutes; `h` and `s` suffixes mean hours and seconds; `0` means run until stopped. Durations not in the list are added to it. | `d=10`, `d=20`, `d=1h`, `d=0` |
 
 Combined: `https://myoung8223.github.io/wbcst/?nts=wbcst&t=MGY&d=10`. That makes a handy target for a URL shortener or bookmark.
