@@ -228,7 +228,7 @@ Ways around it:
 
 1. **Open the tester from GitHub Pages and point it at the Pi (recommended).** Use an address like this:
    ```
-   https://myoung8223.github.io/wbcst/?nts=wbcst&t=MGY
+   https://myoung8223.github.io/wbcst/?nts=wbcst&t=JQD
    ```
    The page comes over `https://`, so every feature works, and the network test runs against the Pi. Chrome asks once to allow *local network access*; choose **Allow**. On managed Chromebooks, an admin can skip the prompt with the Chrome policy **LocalNetworkAccessAllowedForUrls** set to `https://myoung8223.github.io`. Requires Chrome or Edge 142+, and the Pi needs no changes. See the README's *URL parameters* section for details.
 2. **Managed Chromebooks, opening the Pi directly.** In the Google Admin console, set the Chrome policy **OverrideSecurityRestrictionsOnInsecureOrigin**. Search the settings for "insecure origin". List the server's address(es), for example:
