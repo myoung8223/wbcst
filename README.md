@@ -6,12 +6,6 @@ It was built for checking school Chromebooks, but it works on any computer with 
 
 *Coded by Claude Opus 5.5 (Medium). See [Credits](#credits).*
 
-<p align="center">
-<a href="images/stress-test.png"><img src="images/stress-test.png" width="32%" alt="Stress Test"></a>
-<a href="images/peripherals.png"><img src="images/peripherals.png" width="32%" alt="Peripherals"></a>
-<a href="images/report.png"><img src="images/report.png" width="32%" alt="Report"></a>
-</p>
-
 ## Features
 
 - **Stress tests** for CPU, GPU, RAM and storage, plus an optional network test against your own server (a Raspberry Pi works well; see [RPI-SETUP.md](RPI-SETUP.md)), with live readings and graphs on a single screen
@@ -42,7 +36,7 @@ Settings can be passed in the page address, which is handy for bookmarks, or a l
 | `t` | **Tester**: the technician's name or initials. Shown in the header, on every report, and in report file names. | `t=John`, `t=JQD` |
 | `d` | **Duration** of the stress test. A plain number is minutes; `h` and `s` suffixes mean hours and seconds; `0` means run until stopped. Durations not in the list are added to it. | `d=10`, `d=20`, `d=1h`, `d=0` |
 
-Combined: `https://myoung8223.github.io/wbcst/?nts=wbcst&t=MGY&d=10`. That makes a handy target for a URL shortener or bookmark.
+Combined: `https://myoung8223.github.io/wbcst/?nts=wbcst&t=JQD&d=10`. That makes a handy target for a URL shortener or bookmark.
 
 `nts` and `t` can also be set in **⚙** (Settings), and the duration in the dropdown next to Start. Values from the address take priority for that visit without changing what's remembered.
 
@@ -68,9 +62,9 @@ If the permission was denied, re-enable it from the lock icon next to the addres
 
 | Component | How it's tested | What it can catch |
 |---|---|---|
-| **CPU** | Worker threads run integer and floating-point math on all CPU threads but one (left free so the browser stays responsive). Every result is checked against a known answer. Measured in Mops/s, millions of test operations per second (one op is one pass through the test loop). | Calculation errors (instability), heavy thermal throttling, long UI freezes. In Chrome it also reports CPU pressure. |
+| **CPU** | Worker threads run integer and floating-point math on all CPU threads but one. The free thread lets the page keep measuring (graphs, GPU frames, freeze detection) so the test's own load doesn't trigger warnings. Mops/s is therefore a stress-test figure, not a full-chip benchmark; on 2- and 4-thread chips it reflects about 50% and 75% of the chip. Every result is checked against a known answer. Measured in Mops/s, millions of test operations per second (one op is one pass through the test loop). | Calculation errors (instability), heavy thermal throttling, long UI freezes. In Chrome it also reports CPU pressure. |
 | **GPU** | A heavy WebGL shader renders continuously. The amount of work per frame adapts so each frame takes about 50 ms: fast GPUs draw many full-screen passes, slow ones a fraction of one. The GPU stays fully busy without stalling the page, and the score is **GPU throughput** in billions of test operations per second (Gops/s; one op is one pass through the shader loop for one pixel); the frame rate is shown for reference. Every 10 s a fixed frame is rendered and its pixels are compared to the first one. | Throughput drop-off (throttling), GPU/driver resets, inconsistent output |
-| **RAM** | Allocates a share of memory (25% by default) and repeatedly writes and verifies patterns, like a mini memtest. | Memory errors, allocation failures, bandwidth drop-off |
+| **RAM** | Allocates a share of memory (25% by default) and repeatedly writes and verifies patterns, like a mini memtest. | Memory errors, allocation failures (a bandwidth drop-off is reported as information, since it usually reflects the whole chip heating up) |
 | **Storage** | Writes, flushes, reads back and verifies a test file (256 MB by default) using the browser's private file system (OPFS), falling back to IndexedDB. The file is deleted afterward. | Data corruption, slow or stalling writes, slowdown over time |
 | **Network** | Times latency, download and upload against your own server's `down.php` and `up.php`, and verifies every transfer arrived complete. Timings come from the browser's own network timestamps, so a busy or briefly frozen page can't distort them. Only available when a test server is found (see below). | Failed requests, high latency/jitter, connection drops, inconsistent speeds |
 
@@ -116,7 +110,7 @@ The stress tests work in any current browser. **Chrome, Edge or ChromeOS give th
 | CPU, GPU, RAM, storage, network | ✅ | ✅ |
 | Battery level / charging | ✅ | ❌ |
 | Thermal pressure | ✅ | ❌ |
-| Installed RAM size | ✅ (reported as up to "8+ GB") | ❌ (assumes 4 GB) |
+| Installed RAM size | ✅ (older Chrome reports at most "8+ GB"; newer versions report the real size) | ❌ (assumes 4 GB) |
 
 ### Secure page address required for some features
 

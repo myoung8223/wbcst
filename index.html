@@ -275,7 +275,7 @@ dialog h2{margin:0 0 10px;font-size:18px}
 
 <script>
 'use strict';
-const BUILD=20; // increment with every release
+const BUILD=21; // increment with every release
 /* ---------- helpers ---------- */
 const $=id=>document.getElementById(id);
 const txt=(id,v)=>{const e=$(id);if(e)e.textContent=v;};
@@ -309,13 +309,13 @@ async function devInfo(){
   DEV.gpu=gpuName();
   let q='';
   try{const est=await navigator.storage.estimate();DEV.freeMB=(est.quota-est.usage)/1048576;q=' · '+fmt(DEV.freeMB/1024,1)+' GB storage available to browser';}catch(e){}
-  const mem=DEV.mem?(DEV.mem>=8?'8+ GB':DEV.mem+' GB')+' RAM':'RAM size hidden by browser (assuming 4 GB)';
+  const mem=DEV.mem?memStr()+' RAM':'RAM size hidden by browser (assuming 4 GB)';
   const miss=[];if(!navigator.getBattery)miss.push('battery');if(!('PressureObserver' in window))miss.push('thermal');if(!navigator.deviceMemory)miss.push('RAM size');
   if(miss.length)txt('hint','Note: this browser doesn\u2019t expose '+miss.join(', ')+' info. Chrome or Edge gives the most complete results.');
   const tag=(k,t,full)=>{const e=$('spec-'+k);if(!e)return;e.hidden=!t;e.textContent=t||'';e.title=full||t||'';};
   tag('cpu',DEV.threads?`${DEV.threads} CPU threads`:'CPU threads unknown');
   tag('gpu',cleanGpu(DEV.gpu),DEV.gpu);
-  tag('ram',DEV.mem?(DEV.mem>=8?'8+ GB RAM':DEV.mem+' GB RAM'):'RAM size hidden by browser','Browsers round installed RAM and report at most "8+ GB"');
+  tag('ram',DEV.mem?memStr()+' RAM':'RAM size hidden by browser','Browsers round installed RAM; older versions report at most "8+ GB"');
   tag('disk',DEV.freeMB!=null?fmt(DEV.freeMB/1024,1)+' GB available to browser':'','Storage the browser lets this page use (not the drive size)');
   $('osTag').innerHTML=[DEV.os,DEV.browser].filter(Boolean).map(t=>`<span class="spec">${escH(t)}</span>`).join('');
   // power: a fully-charged laptop on AC and a desktop with no battery look identical to a browser
@@ -326,6 +326,8 @@ async function devInfo(){
   const nc=navigator.connection,ntag=()=>{const t={wifi:'Wi-Fi',ethernet:'Ethernet',cellular:'Cellular',wimax:'WiMAX',bluetooth:'Bluetooth',none:'Offline'}[nc&&nc.type];tag('net',t?t+' connection':'');};
   ntag();if(nc&&nc.addEventListener)nc.addEventListener('change',ntag);
 }
+const memStr=()=>DEV.mem?(DEV.mem===8?'8+ GB':DEV.mem+' GB'):''; // older Chrome caps at 8 ("8+"); newer Chrome reports the real size
+const cpuWorkers=t=>Math.max(1,t-1); // leave one thread free so the page, GPU test and sampling stay responsive
 function cleanGpu(s){ // "ANGLE (Intel, Intel(R) UHD Graphics 770 (0x00004690) Direct3D11 vs_5_0 ps_5_0, D3D11)" -> "Intel UHD Graphics 770"
   s=String(s||'').trim();const m=s.match(/^ANGLE \((.*)\)$/);
   if(m){const parts=m[1].split(/,\s*(?![^()]*\))/);s=parts.length>=2?parts[1]:parts[0];}
@@ -581,7 +583,7 @@ function newState(en){const now=performance.now();return{en,running:true,t0:now,
   sys:{b:null,b0:null,jumps:0,bh:[],chargingAll:true,dischargingAll:true,pState:'n/a',pCount:{},lag:0,lagMax:0,hist:[],po:null,lagId:0}};}
 
 function startCPU(st){
-  const t=DEV.threads||4,n=Math.max(1,t-1);st.cpu.n=n;st.cpu.t=t;st.cpu.acc=new Array(n).fill(0); // leave one thread free so the browser stays responsive
+  const t=DEV.threads||4,n=cpuWorkers(t);st.cpu.n=n;st.cpu.t=t;st.cpu.acc=new Array(n).fill(0);
   for(let i=0;i<n;i++){const w=mkWorker(cpuWorker);w.onmessage=e=>{st.cpu.acc[i]+=e.data.ops;st.cpu.errs+=e.data.errs;};w.onerror=()=>{st.cpu.crashed++;};w.postMessage(i);st.cpu.workers.push(w);}
 }
 function startGPU(st){try{if(!GPU.gl)initGL();}catch(e){st.gpu.err=String(e.message||e);return;}st.gpu.raf=requestAnimationFrame(t=>gpuFrame(st,t));}
@@ -681,7 +683,7 @@ function resetTiles(st){
   live('sys',st?'run':'idle');
   ['cpu-big','cpu-base','cpu-pct','gpu-big','gpu-pct','gpu-chk','ram-big','ram-tgt','ram-bw','disk-big','disk-read','disk-phase','disk-mode','disk-size','net-big','net-dl','net-ul','net-jit','net-loss','net-srv','sys-big','sys-chg','sys-drain','sys-pres','sys-lag','sys-wake','sys-hid'].forEach(i=>txt(i,'–'));
   ['cpu-err','gpu-lost','ram-pass','ram-err','disk-pass','disk-err','net-off'].forEach(i=>txt(i,'0'));
-  txt('cpu-thr',DEV.threads?`${Math.max(1,DEV.threads-1)} of ${DEV.threads}`:'–');txt('gpu-load',CFG.gpu);
+  txt('cpu-thr',DEV.threads?`${cpuWorkers(DEV.threads)} of ${DEV.threads}`:'–');txt('gpu-load',CFG.gpu);
   document.querySelectorAll('canvas.spark').forEach(c=>{const x=c.getContext('2d');x.setTransform(1,0,0,1,0,0);x.clearRect(0,0,c.width,c.height);});
 }
 function setRunningUI(on){
@@ -744,7 +746,7 @@ function assess(st){
     else f.push(F(dur<60?'info':'warn','No complete memory pass finished — run the test longer.'));
     if(r.allocErr||(r.done&&r.alloc<r.target)){const pct=r.target?r.alloc/r.target:1;
       f.push(F(pct<0.75?'warn':'info',`Only ${fmt(r.alloc)} of ${fmt(r.target)} MB could be allocated — the browser limits how much memory one tab can use (especially 32-bit browsers), or free memory was low.`));}
-    if(ps&&ps.ratio<0.6)f.push(F('warn',`Memory bandwidth fell to ${Math.round(ps.ratio*100)}% of initial — thermal throttling.`));
+    if(ps&&ps.ratio<0.6)f.push(F('info',`Memory bandwidth fell to ${Math.round(ps.ratio*100)}% of initial — usually the whole chip slowing as it heats (judged under CPU), not a memory fault.`));
     R.comps.push(comp('ram','RAM',[['Tested',fmt(r.alloc)+' MB'],['Target',fmt(r.target)+' MB'],['Bandwidth',ps?fmt(ps.mean,0)+' MB/s':'–'],['Passes',r.pass],['Errors',r.errs]],f));}
   if(st.en.disk){const d=st.disk,P=d.passes,f=[],ws=P.map(p=>p.w),opfs=d.mode==='OPFS';
     if(d.err)f.push(F('warn','Storage test problem: '+d.err));
@@ -813,6 +815,7 @@ function assess(st){
   if(!window.isSecureContext)R.notes.push('Opened over plain http://, so screen wake lock, battery and thermal readings were unavailable. If the device dimmed or locked, timing and GPU results may be affected.');
   if(dur<120)R.notes.push('Short test — run 10+ minutes for reliable throttling and stability results.');
   R.notes.push('Throttling is relative to this unit’s own first minute. Fanless laptops and Chromebooks throttle more by design, so compare against a known-good unit of the same model.');
+  if(st.en.cpu&&st.cpu.t>1)R.notes.push(`CPU used ${st.cpu.n} of ${st.cpu.t} threads; one is left free so the page can keep measuring and its own load doesn’t trigger warnings. Mops/s is this stress-test load, not a full-chip benchmark${st.cpu.t<=4?` (with only ${st.cpu.t} threads, that’s about ${Math.round(st.cpu.n/st.cpu.t*100)}% of the chip)`:''}.`);
   if(st.en.disk)R.notes.push('*Storage reads may be served from cache and look faster than the drive really is.');
   return R;
 }
@@ -821,6 +824,7 @@ function battTip(){
   const ua=navigator.userAgent,where=/CrOS/.test(ua)?'On ChromeOS, open the Diagnostics app (chrome://diagnostics) for battery health % and cycle count.'
     :/Windows/.test(ua)?'On Windows, run "powercfg /batteryreport" and compare Full Charge Capacity to Design Capacity.'
     :/Mac/.test(ua)?'On macOS, see System Settings › Battery › Battery Health, or System Information › Power for cycle count.'
+    :/Android/.test(ua)?'On Android, open Settings › Battery; many models show battery health there (Samsung: Settings › Battery › Battery information; Pixel: Settings › Battery › Battery health).'
     :'On Linux, check /sys/class/power_supply/BAT0 (energy_full vs energy_full_design).';
   return 'Browsers cannot read battery wear or cycle count directly. '+where;
 }
@@ -842,7 +846,7 @@ function showReport(R0){
 function reportText(R0){
   const R=Object.assign({},R0,summarize(R0));
   const L=['WEB-BASED COMPUTER STRESS TEST REPORT (Build '+BUILD+')',`Date: ${R.date.toLocaleString()}`,`Test: ${runDesc(R)}`,...(R.tester?[`Tester: ${R.tester}`]:[]),
-    `Device: ${DEV.os}, ${DEV.threads} threads, ${DEV.mem?(DEV.mem>=8?'8+':DEV.mem)+' GB':'?'} RAM, GPU: ${DEV.gpu}`,`Browser: ${DEV.ua}`,'',
+    `Device: ${DEV.os}, ${DEV.threads} threads, ${memStr()||'?'} RAM, GPU: ${cleanGpu(DEV.gpu)}`,`Browser: ${DEV.ua}`,`GPU renderer string: ${DEV.gpu}`,'',
     `OVERALL: ${LBL[R.lvl]}${R.score==null?'':' ('+R.score+'/100)'} - ${VERDICT[R.lvl]}`,...(R.skipped.length?[`Not tested: ${R.skipped.join(', ')} (switched off; not counted)`]:[]),''];
   for(const c of R.comps){L.push(`[${c.name}] ${LBL[c.lvl]}${c.score==null?'':' '+c.score+'/100'}`);c.metrics.forEach(([k,v])=>L.push(`  ${k}: ${v}`));c.findings.forEach(f=>L.push(`  - (${f.l}) ${f.t}`));L.push('');}
   R.notes.forEach(n=>L.push('Note: '+n));L.push('','Generated by Web-Based Computer Stress Test Build '+BUILD+' - https://github.com/myoung8223/wbcst/');return L.join('\n');
@@ -1167,7 +1171,7 @@ function drawCard(c,R,comp,x,y,w,dry,hBg,K){
 }
 function bHeader(c,R,y,dry){
   const W=RP.W,M=RP.M,band=128;c.textBaseline='top';
-  const dev=`${DEV.os} · ${DEV.threads||'?'} CPU threads · ${DEV.mem?(DEV.mem>=8?'8+ GB':DEV.mem+' GB'):'unknown'} RAM · GPU: ${DEV.gpu}`;
+  const dev=`${DEV.os} · ${DEV.threads||'?'} CPU threads · ${memStr()||'unknown'} RAM · GPU: ${cleanGpu(DEV.gpu)}`;
   c.font=fnt(20,600);const dl=wrapText(c,dev,W-2*M);c.font=fnt(15);const ul=wrapText(c,'Browser: '+DEV.ua,W-2*M);
   if(!dry){c.fillStyle=RC.accent;c.fillRect(0,0,W,band);c.fillStyle='#fff';c.font=fnt(46,700);c.fillText('Web-Based Computer Stress Test Report',M,24);
     c.font=fnt(21);c.globalAlpha=.9;c.fillText(`${R.date.toLocaleString()}  ·  ${runDesc(R)}${R.tester?'  ·  Tester: '+R.tester:''}`,M,84);c.globalAlpha=1;
