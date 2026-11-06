@@ -10,6 +10,7 @@ It was built for checking school Chromebooks, but it works on any computer with 
 
 - **Stress tests** for CPU, GPU, RAM and storage, plus an optional network test against your own server (a Raspberry Pi works well; see [RPI-SETUP.md](RPI-SETUP.md)), with live readings and graphs on a single screen
 - **Run until stopped or timed**: run until you press Stop, or pick 1–60 minutes
+- **Benchmark mode**: runs each checked test on its own with a fixed, versioned recipe, for scores that compare across machines (see [Benchmark mode](#benchmark-mode))
 - **Health report** at the end: an overall score, plus PASS / WARN / FAIL for each component with plain-language findings
 - **Peripherals check**: webcam, microphone, speakers, keyboard, and trackpad/touch
 - **Screen test**: fullscreen patterns for dead/stuck pixels, backlight bleed, impact damage and banding, plus a touchscreen dead-zone test
@@ -34,9 +35,10 @@ Settings can be passed in the page address, which is handy for bookmarks, or a l
 |---|---|---|
 | `nts` | **Network test server**, the server running `down.php` and `up.php`. A bare name gets `.local` added. Plain `http://` is assumed unless you write `https://`. A port and folder may be included. | `nts=wbcst` → `http://wbcst.local/`<br>`nts=192.168.1.50`<br>`nts=wbcst:8080/tester/` |
 | `t` | **Tester**: the technician's name or initials. Shown in the header, on every report, and in report file names. | `t=John`, `t=JQD` |
+| `b` | **Benchmark mode**: `b=1` opens the page with Benchmark mode switched on. `d` is ignored in benchmark mode, which has a fixed recipe. | `b=1` |
 | `d` | **Duration** of the stress test. A plain number is minutes; `h` and `s` suffixes mean hours and seconds; `0` means run until stopped. Durations not in the list are added to it. | `d=10`, `d=20`, `d=1h`, `d=0` |
 
-Combined: `https://myoung8223.github.io/wbcst/?nts=wbcst&t=JQD&d=10`. That makes a handy target for a URL shortener or bookmark.
+Combined: `https://myoung8223.github.io/wbcst/?nts=wbcst&t=JQD&d=10`. That makes a handy target for a URL shortener or bookmark. For a benchmark link: `https://myoung8223.github.io/wbcst/?nts=wbcst&t=JQD&b=1`.
 
 `nts` and `t` can also be set in **⚙** (Settings), and the duration in the dropdown next to Start. Values from the address take priority for that visit without changing what's remembered.
 
@@ -62,7 +64,7 @@ If the permission was denied, re-enable it from the lock icon next to the addres
 
 | Component | How it's tested | What it can catch |
 |---|---|---|
-| **CPU** | Worker threads run integer and floating-point math on all CPU threads but one. The free thread lets the page keep measuring (graphs, GPU frames, freeze detection) so the test's own load doesn't trigger warnings. Mops/s is therefore a stress-test figure, not a full-chip benchmark; on 2- and 4-thread chips it reflects about 50% and 75% of the chip. Every result is checked against a known answer. Measured in Mops/s, millions of test operations per second (one op is one pass through the test loop). | Calculation errors (instability), heavy thermal throttling, long UI freezes. In Chrome it also reports CPU pressure. |
+| **CPU** | Worker threads run integer and floating-point math on all CPU threads but one. The free thread lets the page keep measuring (graphs, GPU frames, freeze detection) so the test's own load doesn't trigger warnings. Mops/s is therefore a stress-test figure, not a full-chip benchmark; on 2- and 4-thread chips it reflects about 50% and 75% of the chip. [Benchmark mode](#benchmark-mode) uses every thread. Every result is checked against a known answer. Measured in Mops/s, millions of test operations per second (one op is one pass through the test loop). | Calculation errors (instability), heavy thermal throttling, long UI freezes. In Chrome it also reports CPU pressure. |
 | **GPU** | A heavy WebGL shader renders continuously. The amount of work per frame adapts so each frame takes about 50 ms: fast GPUs draw many full-screen passes, slow ones a fraction of one. The GPU stays fully busy without stalling the page, and the score is **GPU throughput** in billions of test operations per second (Gops/s; one op is one pass through the shader loop for one pixel); the frame rate is shown for reference. Every 10 s a fixed frame is rendered and its pixels are compared to the first one. | Throughput drop-off (throttling), GPU/driver resets, inconsistent output |
 | **RAM** | Allocates a share of memory (25% by default) and repeatedly writes and verifies patterns, like a mini memtest. | Memory errors, allocation failures (a bandwidth drop-off is reported as information, since it usually reflects the whole chip heating up) |
 | **Storage** | Writes, flushes, reads back and verifies a test file (256 MB by default) using the browser's private file system (OPFS), falling back to IndexedDB. The file is deleted afterward. | Data corruption, slow or stalling writes, slowdown over time |
@@ -84,6 +86,33 @@ The score reflects **faults, not speed**: a slow but healthy machine should scor
 
 - **NOT TESTED**: components switched off, and peripherals never checked. Not counted against the score.
 - **UNDETERMINED**: peripherals that were exercised but not marked Pass or Fail. Not counted against the score.
+
+## Benchmark mode
+
+The normal stress test runs everything at once, which is right for finding faults but muddies speed comparisons: CPU, GPU and RAM share heat, power and memory bandwidth, and one CPU thread is left free so the page can keep measuring. Benchmark mode answers a different question, *how fast is this machine?*, by running each checked test **on its own**, one after another, with the same fixed recipe on every machine.
+
+Tick **Benchmark mode** (left of the test checkboxes), or open the page with `?b=1`, then press **Start**. The duration list shows the total time for the tests you've checked. The live graphs pause during a benchmark; a progress line shows which test is running, and all results appear at the end.
+
+**Recipe (Bench v1)**, in this order, light tests first while the machine is cool:
+
+| Test | Time | Notes |
+|---|---|---|
+| Network | 1 min | Median download, upload and latency, with no CPU load skewing them |
+| Storage | 1 min | 128 MB test file; median write and read speed |
+| CPU single-thread | 30 s | One worker: the fair per-core comparison |
+| CPU all threads | 3 min | A worker on **every** thread (nothing else is running) |
+| *Idle* | 20 s | Lets heat settle between heavy tests |
+| GPU | 3 min | The adaptive shader at the fixed High load |
+| *Idle* | 20 s | |
+| RAM | 3 min | Fixed 256 MB, so bandwidth compares across machines |
+
+About 12 minutes with every test checked. The first 5 seconds of each test are discarded (code warming up, turbo ramping). **Burst** is the next 10 seconds, roughly how the machine feels in quick tasks; **sustained** is the last 60 seconds, what it holds once warm. A fanless Chromebook can score well on burst and much lower on sustained, which is itself useful to know.
+
+The report adds a **benchmark score table** above the component cards, the CPU's scaling (how many times one thread's work all threads managed), and notes if the run was on battery, stopped early, started soon after a stress test, or spent time in a background tab. Fault checks still run, so a calculation, memory or render error during a benchmark is still reported and scored. Benchmark report files are named `wbcst-bench-…`.
+
+**Bench version**: the header shows *Build N · Bench vN*. The build number changes with any release; the Bench version changes only when the recipe or test loops change in a way that alters scores. Compare benchmark scores only between runs with the same Bench version, and ideally the same power state (plugged in vs battery).
+
+Tips: run benchmarks plugged in, on a cool machine (before any stress test), with other apps and tabs closed, and leave the computer alone until it finishes.
 
 ## Peripherals and screen
 

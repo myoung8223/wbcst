@@ -34,6 +34,13 @@ button.primary.stop{background:var(--bad);border-color:var(--bad)}
 #quick{display:flex;gap:6px;flex:none;flex-wrap:wrap}
 #quick label{display:flex;align-items:center;gap:5px;font-size:13px;font-weight:600;background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:3px 9px;cursor:pointer;user-select:none}
 #quick label.dis{opacity:.45;cursor:default}
+#ql-bench{margin-right:6px;border-color:var(--accent)}
+#ql-bench:has(input:checked){background:var(--accent);color:#fff}
+.btab{border-collapse:collapse;margin:0 0 10px;font-size:13px;min-width:min(560px,100%)}
+.btab th,.btab td{padding:3px 12px 3px 0;text-align:right;white-space:nowrap}
+.btab th:first-child,.btab td:first-child{text-align:left}
+.btab th{color:var(--dim);font-weight:600;border-bottom:1px solid var(--line)}
+.btab td{font-variant-numeric:tabular-nums}
 #secNote{color:var(--warn);white-space:normal}
 #secNote[hidden]{display:none}
 main{flex:1;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(2,1fr);gap:8px;min-height:0}
@@ -294,6 +301,16 @@ function mkWorker(fn){const url=URL.createObjectURL(new Blob(['('+fn.toString()+
 const CFG={gpu:'high',ramPct:25,diskMB:256,net:'auto',netUrl:''};
 try{Object.assign(CFG,JSON.parse(localStorage.getItem('cbstress-cfg')||'{}'));}catch(e){}
 const LOADS={medium:{iter:160,passes:2},high:{iter:320,passes:4},extreme:{iter:640,passes:8}};
+/* ---------- benchmark recipe (change any of these -> bump BENCH_V, since scores stop being comparable) ---------- */
+const BENCH_V=1;
+const BENCH={net:60,disk:60,cpu1:30,cpu:180,gpu:180,ram:180,gap:20,warm:5,burst:10,sus:60,ramMB:256,diskMB:128,gpuLoad:'high'};
+let BENCHMODE=false,LAST_STRESS_END=0;
+function benchPlan(en){ // light tests first while the machine is cool; idle gaps between the heavy ones
+  const P=[],heavy=k=>['cpu','gpu','ram'].includes(k);
+  const add=(id,key,label)=>{const pr=P[P.length-1];if(pr&&heavy(pr.key)&&heavy(key)&&pr.key!==key)P.push({id:'gap',label:'Cooling down',sec:BENCH.gap});P.push({id,key,label,sec:BENCH[id]});};
+  if(en.net)add('net','net','Network');if(en.disk)add('disk','disk','Storage');
+  if(en.cpu){add('cpu1','cpu','CPU single-thread');add('cpu','cpu','CPU all threads');}
+  if(en.gpu)add('gpu','gpu','GPU');if(en.ram)add('ram','ram','RAM');return P;}
 
 /* ---------- device info ---------- */
 const DEV={os:osName(),browser:browserName(),threads:navigator.hardwareConcurrency||0,mem:navigator.deviceMemory||0,gpu:'unknown',ua:navigator.userAgent};
@@ -460,7 +477,7 @@ function initGL(){
 const GPU_TARGET_MS=50;
 function gpuFrame(st,now){
   if(!st.running)return;st.gpu.raf=requestAnimationFrame(t=>gpuFrame(st,t));
-  const g=st.gpu,gl=GPU.gl;if(!GPU.ok||gl.isContextLost()){g.lastT=0;return;}const L=LOADS[CFG.gpu]||LOADS.high;
+  const g=st.gpu,gl=GPU.gl;if(!GPU.ok||gl.isContextLost()){g.lastT=0;return;}const L=LOADS[st.gload||CFG.gpu]||LOADS.high;
   if(g.lastT&&now){const dt=now-g.lastT; // frame time of the previous frame -> adjust the amount of work
     if(dt<GPU_TARGET_MS*0.5)g.amt*=1.25;else if(dt<GPU_TARGET_MS*0.8)g.amt*=1.06;else if(dt>GPU_TARGET_MS*1.25)g.amt*=Math.max(0.5,GPU_TARGET_MS/dt);
     g.amt=Math.max(0.02,Math.min(64,g.amt));}
@@ -478,14 +495,14 @@ function gpuFrame(st,now){
   g.frames++;
 }
 function gpuCheck(st){ // render a fixed frame and compare its pixel hash to the first one
-  const gl=GPU.gl;if(!GPU.ok||gl.isContextLost())return;const L=LOADS[CFG.gpu]||LOADS.high;
+  const gl=GPU.gl;if(!GPU.ok||gl.isContextLost())return;const L=LOADS[st.gload||CFG.gpu]||LOADS.high;
   gl.bindFramebuffer(gl.FRAMEBUFFER,GPU.fbo);gl.viewport(0,0,64,64);gl.disable(gl.BLEND);
   gl.uniform2f(GPU.u.uRes,64,64);gl.uniform1f(GPU.u.uT,1.2345);gl.uniform1i(GPU.u.uIter,L.iter);gl.uniform1f(GPU.u.uScale,1);
   gl.drawArrays(gl.TRIANGLES,0,3);const px=new Uint8Array(64*64*4);gl.readPixels(0,0,64,64,gl.RGBA,gl.UNSIGNED_BYTE,px);gl.bindFramebuffer(gl.FRAMEBUFFER,null);
   let h=2166136261;for(let i=0;i<px.length;i++){h^=px[i];h=Math.imul(h,16777619);}h>>>=0;
   st.gpu.checks++;if(st.gpu.ref===null)st.gpu.ref=h;else if(h!==st.gpu.ref)st.gpu.mism++;
 }
-$('gpuCanvas').addEventListener('webglcontextlost',e=>{e.preventDefault();GPU.ok=false;if(S&&S.running)S.gpu.ctxLost++;});
+$('gpuCanvas').addEventListener('webglcontextlost',e=>{e.preventDefault();GPU.ok=false;if(S&&S.running)(S.cur||S).gpu.ctxLost++;});
 $('gpuCanvas').addEventListener('webglcontextrestored',()=>{try{initGL();}catch(e){}});
 
 /* ---------- network ---------- */
@@ -522,7 +539,8 @@ async function probeServer(){
 }
 function syncQuick(){ // keep the header toggles in step with the tile checkboxes
   for(const k of KEYS){const q=$('q-'+k),t=$('en-'+k);if(!q)return;q.checked=t.checked;q.disabled=t.disabled;$('ql-'+k).classList.toggle('dis',t.disabled);
-    $('ql-'+k).title=k==='net'&&SRV.state!=='ok'&&!(S&&S.running)?'No network test server found':'';}}
+    $('ql-'+k).title=k==='net'&&SRV.state!=='ok'&&!(S&&S.running)?'No network test server found':'';}
+  benchDurLabel();}
 function netTile(){ // reflect server availability on the Network tile (only when idle)
   if(S&&S.running)return;const cb=$('en-net'),ok=SRV.state==='ok';
   if(!ok){if(!cb.disabled)SRV.wasOn=cb.checked;cb.checked=false;cb.disabled=true;}
@@ -571,7 +589,7 @@ let S=null,LAST=null,wakeLock=null;
 const repBase=()=>Object.assign(LAST||{date:new Date(),dur:0,reason:'none',comps:[],notes:[],graphs:{}},{tester:TESTER});
 function showTester(){const e=$('testerTag');e.hidden=!TESTER;e.textContent='Tester: '+TESTER;}
 const hasResults=()=>!!(LAST||periphComp());
-const runDesc=R=>R.reason==='none'?'Peripheral and screen checks only (no stress test run)':`${fmtTime(R.dur)} test, ended ${R.reason==='timer'?'by timer':'by user'}`;
+const runDesc=R=>R.reason==='none'?'Peripheral and screen checks only (no stress test run)':R.bench?`Benchmark (Bench v${R.bench.v}), ${fmtTime(R.dur)}${R.reason==='timer'?'':', stopped early by user'}`:`${fmtTime(R.dur)} test, ended ${R.reason==='timer'?'by timer':'by user'}`;
 function updRep(){$('repBtn').disabled=!!(S&&S.running)||!hasResults();}
 const KEYS=['cpu','gpu','ram','disk','net'];
 function newState(en){const now=performance.now();return{en,running:true,t0:now,last:now,sec:0,hiddenSec:0,dur:0,
@@ -582,19 +600,19 @@ function newState(en){const now=performance.now();return{en,running:true,t0:now,
   net:{provider:null,lat:[],dl:[],ul:[],ok:0,fail:0,offline:0,ulShort:false},
   sys:{b:null,b0:null,jumps:0,bh:[],chargingAll:true,dischargingAll:true,pState:'n/a',pCount:{},lag:0,lagMax:0,hist:[],po:null,lagId:0}};}
 
-function startCPU(st){
-  const t=DEV.threads||4,n=cpuWorkers(t);st.cpu.n=n;st.cpu.t=t;st.cpu.acc=new Array(n).fill(0);
+function startCPU(st,nw){
+  const t=DEV.threads||4,n=nw||cpuWorkers(t);st.cpu.n=n;st.cpu.t=t;st.cpu.acc=new Array(n).fill(0);
   for(let i=0;i<n;i++){const w=mkWorker(cpuWorker);w.onmessage=e=>{st.cpu.acc[i]+=e.data.ops;st.cpu.errs+=e.data.errs;};w.onerror=()=>{st.cpu.crashed++;};w.postMessage(i);st.cpu.workers.push(w);}
 }
 function startGPU(st){try{if(!GPU.gl)initGL();}catch(e){st.gpu.err=String(e.message||e);return;}st.gpu.raf=requestAnimationFrame(t=>gpuFrame(st,t));}
-function startRAM(st){
-  const r=st.ram,gb=DEV.mem||4;r.target=Math.max(64,Math.floor(gb*1024*CFG.ramPct/100/16)*16);
+function startRAM(st,mb){
+  const r=st.ram,gb=DEV.mem||4;r.target=mb||Math.max(64,Math.floor(gb*1024*CFG.ramPct/100/16)*16);
   const w=mkWorker(ramWorker);r.w=w;
   w.onmessage=e=>{const d=e.data;if(d.type==='alloc'){r.alloc=d.mb;if(d.done){r.done=true;r.allocErr=d.err;}}else{r.bytes+=d.bytes;r.errs+=d.errs;r.pass=d.pass;}};
   w.onerror=()=>{r.crashed++;};w.postMessage({mb:r.target});
 }
-async function startDisk(st){
-  const d=st.disk;let mb=CFG.diskMB;
+async function startDisk(st,want){
+  const d=st.disk;let mb=want||CFG.diskMB;
   try{const est=await navigator.storage.estimate(),free=(est.quota-est.usage)/1048576;if(free<mb*1.5)mb=Math.max(16,Math.floor(free/2));}catch(e){}
   if(!st.running){d.stopped=true;return;}
   d.mb=mb;txt('disk-size',mb+' MB');
@@ -617,23 +635,71 @@ window.addEventListener('beforeunload',e=>{if(S&&S.running){e.preventDefault();e
 function start(){
   const en={};for(const k of KEYS)en[k]=$('en-'+k).checked;
   if(!KEYS.some(k=>en[k])){alert('Pick at least one component to test.');return;}
+  if(BENCHMODE){runBench(en);return;}
   const st=S=newState(en);st.dur=+$('dur').value;
   resetTiles(st);setRunningUI(true);
   if(en.cpu)startCPU(st);if(en.gpu)startGPU(st);if(en.ram)startRAM(st);if(en.disk)startDisk(st);if(en.net)netLoop(st);
   startSys(st);requestWake();
   st.tickId=setInterval(()=>tick(st),1000);
 }
-async function stop(reason){
-  const st=S;if(!st||!st.running)return;
-  st.running=false;st.reason=reason;st.elapsed=(performance.now()-st.t0)/1000;
-  clearInterval(st.tickId);clearInterval(st.sys.lagId);
+async function haltParts(st){ // stop a state's test engines (workers, GPU loop, storage, network)
+  st.running=false;
   st.cpu.workers.forEach(w=>w.terminate());if(st.ram.w)st.ram.w.terminate();cancelAnimationFrame(st.gpu.raf);
+  if(st.disk.w){st.disk.w.postMessage({cmd:'stop'});const t=performance.now();while(!st.disk.stopped&&performance.now()-t<4000)await sleep(100);st.disk.w.terminate();}
+  if(st.netP)await Promise.race([st.netP,sleep(5000)]);
+}
+async function stopMonitors(st){
+  clearInterval(st.tickId);clearInterval(st.sys.lagId);
   try{if(st.sys.po)st.sys.po.disconnect();}catch(e){}
   try{if(wakeLock)await wakeLock.release();}catch(e){}wakeLock=null;
-  const b=$('startBtn');b.disabled=true;b.textContent='Wait…';
-  if(st.disk.w){st.disk.w.postMessage({cmd:'stop'});const t=performance.now();while(!st.disk.stopped&&performance.now()-t<4000)await sleep(100);st.disk.w.terminate();}
+}
+async function stop(reason){
+  const st=S;if(!st||!st.running)return;
+  const b=$('startBtn');
+  if(st.bench){st.running=false;st.reason=reason;b.disabled=true;b.textContent='Wait…';return;} // the benchmark runner winds down and reports
+  st.reason=reason;st.elapsed=(performance.now()-st.t0)/1000;
+  b.disabled=true;b.textContent='Wait…';
+  await stopMonitors(st);await haltParts(st);
+  if(st.elapsed>60)LAST_STRESS_END=performance.now();
   setRunningUI(false);
   LAST=assess(st);updRep();applyTileStatus(st,LAST);showReport(repBase());
+}
+
+/* ---------- benchmark mode: each checked test alone, in a fixed order, for a fixed time ---------- */
+async function runBench(en){
+  const st=S=newState(en),plan=benchPlan(en);
+  st.bench={v:BENCH_V,plan,idx:-1,pt0:0,res:{},warmAgo:LAST_STRESS_END?(performance.now()-LAST_STRESS_END)/1000:null};
+  st.dur=plan.reduce((a,p)=>a+p.sec,0);
+  resetTiles(st);setRunningUI(true);for(const k of KEYS)if(en[k]){live(k,'idle');txt('s-'+k,'Queued');}
+  startSys(st);requestWake();st.tickId=setInterval(()=>benchTick(st),1000);benchTick(st,true);
+  const wait=async sec=>{const t=performance.now();while(st.running&&performance.now()-t<sec*1000)await sleep(200);};
+  for(let i=0;i<plan.length&&st.running;i++){
+    const p=plan[i];st.bench.idx=i;st.bench.pt0=performance.now();benchTick(st,true);
+    if(p.id==='gap'){await wait(p.sec);continue;}
+    const ph=newState({[p.key]:true});ph.gload=BENCH.gpuLoad;st.cur=ph;live(p.key,'run');txt('s-'+p.key,'Running');
+    if(p.id==='net')ph.netP=netLoop(ph);
+    else if(p.id==='disk')startDisk(ph,BENCH.diskMB);
+    else if(p.id==='cpu1')startCPU(ph,1);
+    else if(p.id==='cpu')startCPU(ph,DEV.threads||4); // alone, so every thread is used
+    else if(p.id==='gpu')startGPU(ph);
+    else if(p.id==='ram')startRAM(ph,BENCH.ramMB);
+    await wait(p.sec);
+    ph.complete=st.running;ph.elapsed=(performance.now()-ph.t0)/1000;st.cur=null;
+    await haltParts(ph);st.bench.res[p.id]=ph;
+    live(p.key,'idle');txt('s-'+p.key,ph.complete?(p.id==='cpu1'?'Running':'Done'):'Stopped');
+  }
+  if(st.running)st.reason='timer';st.running=false;st.elapsed=(performance.now()-st.t0)/1000;
+  await stopMonitors(st);setRunningUI(false);
+  LAST=assessBench(st);updRep();applyTileStatus(st,LAST);showReport(repBase());
+}
+function benchTick(st,uiOnly){
+  if(!st.running)return;const now=performance.now();
+  if(!uiOnly){const dt=Math.max(0.2,(now-st.last)/1000),hidden=document.hidden;st.last=now;st.sec++;if(hidden)st.hiddenSec++;
+    sampleSys(st,hidden);const ph=st.cur;if(ph){ph.sec++;if(hidden)ph.hiddenSec++;sampleParts(ph,dt,hidden);}}
+  const el=(now-st.t0)/1000,B=st.bench,p=B.plan[B.idx];
+  txt('elapsed',fmtTime(el)+' / '+fmtTime(st.dur));$('prog').style.width=Math.min(100,el/st.dur*100)+'%';
+  if(p){const left=p.sec-(now-B.pt0)/1000,n=B.plan.filter(x=>x.id!=='gap'),k=n.indexOf(p);
+    txt('hint',p.id==='gap'?`Benchmark: cooling down before the next test · ${fmtTime(left)}`:`Benchmark ${k+1} of ${n.length}: ${p.label} · ${fmtTime(left)} left. Results appear at the end; keep this tab in front.`);}
 }
 
 /* ---------- per-second sampling + UI ---------- */
@@ -642,15 +708,20 @@ function live(k,state){const d=$('d-'+k);d.className='dot '+state;txt('s-'+k,{ru
 function tick(st){
   if(!st.running)return;
   const now=performance.now(),dt=Math.max(0.2,(now-st.last)/1000),hidden=document.hidden,el=(now-st.t0)/1000;st.last=now;st.sec++;if(hidden)st.hiddenSec++;
+  sampleParts(st,dt,hidden);sampleSys(st,hidden);
+  render(st,el);
+  if(st.dur>0&&el>=st.dur)stop('timer');
+}
+function sampleParts(st,dt,hidden){
   if(st.en.cpu){const c=st.cpu,tot=c.acc.reduce((a,b)=>a+b,0);c.acc.fill(0);c.hist.push(tot/1e6/dt);}
   if(st.en.gpu){const g=st.gpu,bad=hidden||!GPU.ok||g.err;g.hist.push(bad?null:g.work/dt/1e9);g.fps.push(bad?null:g.frames/dt);g.frames=0;g.work=0;if(!hidden&&!g.err&&st.sec%10===5)gpuCheck(st);}
   if(st.en.ram){const r=st.ram;r.hist.push(r.done?r.bytes/1048576/dt:null);r.bytes=0;}
   if(st.en.disk){const d=st.disk;d.hist.push(d.lastW);d.rhist.push(d.lastR);}
+}
+function sampleSys(st,hidden){
   const y=st.sys;if(!hidden)y.lagMax=Math.max(y.lagMax,y.lag);y.hist.push(hidden?null:y.lag);y.lag=0;
   if(y.b){if(y.b.charging)y.dischargingAll=false;else y.chargingAll=false;}
   y.pCount[y.pState]=(y.pCount[y.pState]||0)+1;y.bh.push(y.b?y.b.level*100:null);
-  render(st,el);
-  if(st.dur>0&&el>=st.dur)stop('timer');
 }
 function render(st,el){
   txt('elapsed',fmtTime(el)+(st.dur?' / '+fmtTime(st.dur):''));
@@ -683,13 +754,25 @@ function resetTiles(st){
   live('sys',st?'run':'idle');
   ['cpu-big','cpu-base','cpu-pct','gpu-big','gpu-pct','gpu-chk','ram-big','ram-tgt','ram-bw','disk-big','disk-read','disk-phase','disk-mode','disk-size','net-big','net-dl','net-ul','net-jit','net-loss','net-srv','sys-big','sys-chg','sys-drain','sys-pres','sys-lag','sys-wake','sys-hid'].forEach(i=>txt(i,'–'));
   ['cpu-err','gpu-lost','ram-pass','ram-err','disk-pass','disk-err','net-off'].forEach(i=>txt(i,'0'));
-  txt('cpu-thr',DEV.threads?`${cpuWorkers(DEV.threads)} of ${DEV.threads}`:'–');txt('gpu-load',CFG.gpu);
+  txt('cpu-thr',DEV.threads?(BENCHMODE?`1, then ${DEV.threads} of ${DEV.threads}`:`${cpuWorkers(DEV.threads)} of ${DEV.threads}`):'–');txt('gpu-load',BENCHMODE?BENCH.gpuLoad:CFG.gpu);
   document.querySelectorAll('canvas.spark').forEach(c=>{const x=c.getContext('2d');x.setTransform(1,0,0,1,0,0);x.clearRect(0,0,c.width,c.height);});
 }
 function setRunningUI(on){
   const b=$('startBtn');b.disabled=false;b.textContent=on?'Stop':'Start';b.classList.toggle('stop',on);
-  for(const k of KEYS)$('en-'+k).disabled=on;if(!on)netTile();syncQuick();$('dur').disabled=on;$('setBtn').disabled=on;updRep();
-  txt('hint',on?'Testing… keep this tab in front (background tabs get throttled). Press Stop at any time for the health report.':'Tips: close other tabs, keep this tab in front, and test for 10+ minutes so heat builds up. Unplug to measure battery drain; plug in to check the charger.');
+  for(const k of KEYS)$('en-'+k).disabled=on;if(!on)netTile();syncQuick();$('dur').disabled=on||BENCHMODE;$('setBtn').disabled=on;$('q-bench').disabled=on;$('ql-bench').classList.toggle('dis',on);updRep();
+  txt('hint',on?'Testing… keep this tab in front (background tabs get throttled). Press Stop at any time for the health report.':idleHint());
+}
+const idleHint=()=>BENCHMODE?'Benchmark mode: each test runs alone for a fixed time, so scores compare across machines. Run it plugged in, cool, with other apps closed.'
+  :'Tips: close other tabs, keep this tab in front, and test for 10+ minutes so heat builds up. Unplug to measure battery drain; plug in to check the charger.';
+function benchDurLabel(){const o=$('dur').querySelector('option[value="bench"]');if(!o)return;const en={};for(const k of KEYS)en[k]=$('en-'+k).checked;
+  const tot=benchPlan(en).reduce((a,p)=>a+p.sec,0);o.text=tot?'Benchmark · '+fmtTime(tot):'Benchmark';}
+let BENCH_PREV='600';
+function setBench(on){
+  BENCHMODE=on;$('q-bench').checked=on;const sel=$('dur');let o=sel.querySelector('option[value="bench"]');
+  if(on){if(!o){BENCH_PREV=sel.value;o=new Option('Benchmark','bench');sel.add(o);}benchDurLabel();sel.value='bench';}
+  else if(o){o.remove();sel.value=BENCH_PREV;}
+  sel.disabled=on||!!(S&&S.running);sel.title=on?'Benchmark mode uses a fixed recipe per test':'Test length';
+  if(!(S&&S.running)){txt('hint',idleHint());resetTiles(null);}
 }
 function applyTileStatus(st,rep){
   for(const c of rep.comps){const d=$('d-'+c.key);if(!d)continue;d.className='dot '+c.lvl;txt('s-'+c.key,LBL[c.lvl]);}
@@ -815,10 +898,89 @@ function assess(st){
   if(!window.isSecureContext)R.notes.push('Opened over plain http://, so screen wake lock, battery and thermal readings were unavailable. If the device dimmed or locked, timing and GPU results may be affected.');
   if(dur<120)R.notes.push('Short test — run 10+ minutes for reliable throttling and stability results.');
   R.notes.push('Throttling is relative to this unit’s own first minute. Fanless laptops and Chromebooks throttle more by design, so compare against a known-good unit of the same model.');
-  if(st.en.cpu&&st.cpu.t>1)R.notes.push(`CPU used ${st.cpu.n} of ${st.cpu.t} threads; one is left free so the page can keep measuring and its own load doesn’t trigger warnings. Mops/s is this stress-test load, not a full-chip benchmark${st.cpu.t<=4?` (with only ${st.cpu.t} threads, that’s about ${Math.round(st.cpu.n/st.cpu.t*100)}% of the chip)`:''}.`);
+  if(st.en.cpu&&st.cpu.t>1)R.notes.push(`CPU used ${st.cpu.n} of ${st.cpu.t} threads; one is left free so the page can keep measuring and its own load doesn’t trigger warnings. Mops/s is this stress-test load, not a full-chip benchmark (Benchmark mode uses every thread)${st.cpu.t<=4?` (with only ${st.cpu.t} threads, that’s about ${Math.round(st.cpu.n/st.cpu.t*100)}% of the chip)`:''}.`);
   if(st.en.disk)R.notes.push('*Storage reads may be served from cache and look faster than the drive really is.');
   return R;
 }
+/* Benchmark scoring: the first BENCH.warm seconds of each test are discarded (code optimizing, turbo ramping).
+   Burst = the next BENCH.burst seconds; sustained = the last BENCH.sus seconds (or last third if shorter). */
+function benchScore(h){
+  const a=valid(h).slice(BENCH.warm);if(a.length<3)return null;
+  const burst=avg(a.slice(0,BENCH.burst)),tail=a.slice(-Math.min(BENCH.sus,Math.max(3,Math.floor(a.length/3)))),sus=avg(tail);
+  return{burst,sus,ratio:burst>0?sus/burst:1,mean:avg(a)};
+}
+function assessBench(st){
+  const bt=sec=>sec<60||sec%60?sec+' s':sec/60+' min';
+  const B=st.bench,res=B.res,R={date:new Date(),dur:st.elapsed,reason:st.reason,comps:[],notes:[],graphs:{},bench:{v:BENCH_V,rows:[]}};
+  const rows=R.bench.rows,row=(name,a,b,unit)=>rows.push({name,a,b,unit});
+  const pct=v=>v==null?'–':Math.round(v*100)+'%',early=ph=>ph&&!ph.complete?' (stopped early)':'';
+  const held=(sc,len,what)=>sc?F('info',`Held ${pct(sc.ratio)} of its burst ${what} over ${fmtTime(len)} of sustained load${sc.ratio<0.6?' (run the stress test to judge whether that’s a cooling problem)':''}.`):F('info','Too little data for burst and sustained scores.');
+  const GR=(k,d,label,col,ref,dur)=>{R.graphs[k]={d,label,col,ref,refName:'burst',dur};};
+  const gf=(v,u)=>v==null?'–':fmt(v,v<10?2:v<100?1:0)+(u?' '+u:'');
+  if(st.en.net){const ph=res.net;if(ph){const n=ph.net,f=[],tot=n.ok+n.fail,loss=tot?n.fail/tot*100:0,ml=median(n.lat),dlS=n.dl.length>2?n.dl.slice(1):n.dl,ulS=n.ul.length>2?n.ul.slice(1):n.ul,jit=median(n.lat.slice(1).map((v,i)=>Math.abs(v-n.lat[i])));
+    if(!n.ok)f.push(F('bad',`Could not reach the test server (${n.provider}).`));
+    else{if(n.offline)f.push(F('bad',`Connection dropped ${n.offline} time(s).`));
+      f.push(loss>10?F('bad',`${fmt(loss,1)}% of ${tot} requests failed.`):loss>2?F('warn',`${fmt(loss,1)}% of ${tot} requests failed.`):F('ok',`${tot} requests, ${fmt(loss,1)}% failed.`));
+      if(n.ulShort)f.push(F('warn','Some uploads were cut short by the server — check PHP post_max_size (needs at least 8M).'));
+      f.push(F('info','Includes the Wi-Fi and the network path to the test server, not just this computer.'));}
+    const dn=dlS.length?median(dlS):null,up=ulS.length?median(ulS):null;
+    row('Network download',dn,null,'Mbps');row('Network upload',up,null,'Mbps');row('Network latency',n.lat.length?ml:null,null,'ms');
+    R.comps.push(comp('net','Network',[['Server',n.provider||'–'],['Median down',dn==null?'–':fmt(dn,1)+' Mbps'],['Median up',up==null?'–':fmt(up,1)+' Mbps'],['Median latency',fmt(ml,0)+' ms'],['Jitter',fmt(jit,0)+' ms'],['Failed',fmt(loss,1)+'%'],['Test time',fmtTime(ph.elapsed)+early(ph)]],f));
+    GR('net',n.lat,'Latency per request (ms)','#13a3a3',null,ph.elapsed);}}
+  if(st.en.disk){const ph=res.disk;if(ph){const d=ph.disk,P=d.passes,f=[],E=d.E,quirk=E.stale+E.empty+E.short+E.shortW,opfs=d.mode==='OPFS';
+    if(d.err)f.push(F('warn','Storage test problem: '+d.err));
+    if(E.corrupt)f.push(F('bad',`${E.corrupt} block(s) came back with scrambled data, even when read a second time — possible failing storage (or faulty RAM).`));
+    if(quirk)f.push(F('warn',`${quirk} block(s) returned old, empty or incomplete data (old ${E.stale}, empty ${E.empty}, short reads ${E.short}, short writes ${E.shortW}) — usually the browser's storage layer, not the drive.`));
+    if(E.transient)f.push(F(E.transient>3?'warn':'info',`${E.transient} block(s) read wrong once but correctly on retry.`));
+    if(!d.errs&&!quirk&&P.length)f.push(F('ok',`${P.length} write/read/verify pass(es) of ${d.mb} MB with no errors.`));
+    if(d.maxW>(opfs?2000:5000))f.push(F('warn',`Slowest single 1 MB write took ${fmt(d.maxW/1000,1)} s — storage stalls.`));
+    const w=P.length?median(P.map(x=>x.w)):(valid(d.hist).length?median(valid(d.hist)):null),r=P.length?median(P.map(x=>x.r)):(valid(d.rhist).length?median(valid(d.rhist)):null);
+    if(!P.length)f.push(F('info','No complete pass finished in the time allowed, so speeds are from partial passes.'));
+    row('Storage write',w,null,'MB/s');row('Storage read*',r,null,'MB/s');
+    R.comps.push(comp('disk','Storage',[['API',d.mode],['File',d.mb+' MB'],['Passes',P.length],['Write (median)',w==null?'–':fmt(w,0)+' MB/s'],['Read* (median)',r==null?'–':fmt(r,0)+' MB/s'],['Slowest 1 MB write',d.maxW?fmt(d.maxW,0)+' ms':'–'],['Test time',fmtTime(ph.elapsed)+early(ph)]],f));
+    GR('disk',P.length>=2?P.map(x=>x.w):d.hist,P.length>=2?'Write speed per pass (MB/s)':'Write speed (MB/s)','#c98a00',null,ph.elapsed);}}
+  if(st.en.cpu){const p1=res.cpu1,pa=res.cpu;if(p1||pa){const f=[],errs=(p1?p1.cpu.errs:0)+(pa?pa.cpu.errs:0),cr=(p1?p1.cpu.crashed:0)+(pa?pa.cpu.crashed:0);
+    const one=p1?benchScore(p1.cpu.hist):null,all=pa?benchScore(pa.cpu.hist):null,t=DEV.threads||4;
+    if(cr)f.push(F('bad',`${cr} CPU worker(s) crashed.`));
+    f.push(errs?F('bad',`${errs} calculation error(s) — the CPU produced wrong results. Sign of instability.`):F('ok','Every calculation was verified correct.'));
+    if(pa)f.push(held(all,pa.elapsed,'speed'));
+    if(one&&all)f.push(F('info',`All ${t} threads together did ${fmt(all.burst/one.mean,1)}× the work of one thread (real cores add close to 1× each; hyper-threads and efficiency cores add less).`));
+    row('CPU single-thread',one&&one.mean,null,'Mops/s');row('CPU all threads',all&&all.burst,all&&all.sus,'Mops/s');
+    R.comps.push(comp('cpu','CPU',[['Single-thread',one?fmt(one.mean,0)+' Mops/s':'–'],['All threads, burst',all?fmt(all.burst,0)+' Mops/s':'–'],['All threads, sustained',all?fmt(all.sus,0)+' Mops/s':'–'],['Sustained vs burst',all?pct(all.ratio):'–'],['Threads',`1, then ${t} of ${t}`],['Errors',errs],['Test time',fmtTime((p1?p1.elapsed:0)+(pa?pa.elapsed:0))+early(pa||p1)]],f));
+    if(pa)GR('cpu',pa.cpu.hist,'CPU all threads over time (Mops/s)','#2f6fdf',all&&all.burst,pa.elapsed);}}
+  if(st.en.gpu){const ph=res.gpu;if(ph){const g=ph.gpu,f=[],sc=g.err?null:benchScore(g.hist);
+    if(g.err)f.push(F('bad','GPU test could not start: '+g.err));
+    else{if(g.ctxLost)f.push(F('bad',`Graphics context lost ${g.ctxLost} time(s) — the GPU or its driver reset under load.`));
+      if(g.mism)f.push(F('bad',`${g.mism} of ${g.checks} render checks produced different pixels — inconsistent GPU output.`));else if(g.checks)f.push(F('ok',`All ${g.checks} render checks matched.`));
+      f.push(held(sc,ph.elapsed,'throughput'));}
+    row('GPU',sc&&sc.burst,sc&&sc.sus,'Gops/s');
+    R.comps.push(comp('gpu','GPU',[['API',GPU.api||'–'],['Load',BENCH.gpuLoad+' (fixed)'],['Burst',gf(sc&&sc.burst,'Gops/s')],['Sustained',gf(sc&&sc.sus,'Gops/s')],['Sustained vs burst',sc?pct(sc.ratio):'–'],['Avg frame rate',valid(g.fps).length?fmt(avg(valid(g.fps)),0)+' FPS':'–'],['Render checks',g.checks?`${g.checks-g.mism}/${g.checks}`:'–'],['Test time',fmtTime(ph.elapsed)+early(ph)]],f));
+    GR('gpu',g.hist,'GPU throughput over time (Gops/s)','#8b4fe0',sc&&sc.burst,ph.elapsed);}}
+  if(st.en.ram){const ph=res.ram;if(ph){const r=ph.ram,f=[],sc=benchScore(r.hist);
+    if(r.crashed)f.push(F('bad','Memory test worker crashed (possibly ran out of memory).'));
+    if(r.errs)f.push(F('bad',`${r.errs} memory verification error(s) — data changed after being written. Strong sign of faulty RAM.`));
+    else if(r.pass>0)f.push(F('ok',`${r.pass} write/verify pass(es) over ${fmt(r.alloc)} MB with no errors.`));
+    if(r.allocErr||(r.done&&r.alloc<r.target))f.push(F('warn',`Only ${fmt(r.alloc)} of ${fmt(r.target)} MB could be allocated, so bandwidth isn't comparable with other machines.`));
+    f.push(held(sc,ph.elapsed,'bandwidth'));
+    row('RAM bandwidth',sc&&sc.burst,sc&&sc.sus,'MB/s');
+    R.comps.push(comp('ram','RAM',[['Tested',fmt(r.alloc)+' MB (fixed)'],['Burst',sc?fmt(sc.burst,0)+' MB/s':'–'],['Sustained',sc?fmt(sc.sus,0)+' MB/s':'–'],['Sustained vs burst',sc?pct(sc.ratio):'–'],['Passes',r.pass],['Errors',r.errs],['Test time',fmtTime(ph.elapsed)+early(ph)]],f));
+    GR('ram',r.hist,'Memory bandwidth over time (MB/s)','#1e9e57',sc&&sc.burst,ph.elapsed);}}
+  R.skipped=KEYS.filter(k=>!st.en[k]).map(k=>k==='net'&&SRV.state!=='ok'?'Network (no test server)':({cpu:'CPU',gpu:'GPU',ram:'RAM',disk:'Storage',net:'Network'})[k]);
+  const notRun=B.plan.filter(p=>p.id!=='gap'&&!res[p.id]).map(p=>p.label);
+  if(notRun.length)R.notes.push('Stopped early — not run: '+notRun.join(', ')+'. Scores from a stopped benchmark aren’t comparable with complete runs.');
+  const y=st.sys;
+  if(y.b){if(y.dischargingAll)R.notes.push('Ran on battery power. Many laptops run slower on battery, so compare battery runs only with battery runs.');
+    else if(!y.chargingAll)R.notes.push('The charger was connected or disconnected during the benchmark, which can change speeds.');}
+  if(B.warmAgo!=null&&B.warmAgo<300)R.notes.push(`A stress test ended ${fmt(B.warmAgo/60,1)} min before this benchmark, so the machine may have started warm and scored lower than it would cool.`);
+  const hp=st.sec?st.hiddenSec/st.sec:0;if(hp>0.05)R.notes.push(`The tab was in the background ${Math.round(hp*100)}% of the benchmark, so its scores are unreliable.`);
+  if(y.lagMax>10000)R.notes.push(`The page froze for up to ${fmt(y.lagMax/1000,1)} s — the system struggled badly (possibly out of memory).`);
+  if(!window.isSecureContext)R.notes.push('Opened over plain http://, so the screen could dim or lock during the benchmark (no wake lock).');
+  R.notes.push(`Bench v${BENCH_V} recipe: each test runs alone (network ${bt(BENCH.net)}, storage ${bt(BENCH.disk)}, CPU single-thread ${bt(BENCH.cpu1)}, then all threads ${bt(BENCH.cpu)}, GPU ${bt(BENCH.gpu)}, RAM ${bt(BENCH.ram)}, with ${bt(BENCH.gap)} idle between heavy tests). The first ${BENCH.warm} s of each are discarded; burst = the next ${BENCH.burst} s, sustained = the last ${BENCH.sus} s. Compare scores only with the same Bench version.`);
+  if(st.en.disk)R.notes.push('*Storage reads may be served from cache and look faster than the drive really is.');
+  return R;
+}
+const benchCell=(v,u)=>v==null?'–':fmt(v,u==='Gops/s'?(v<10?2:v<100?1:0):u==='Mbps'?1:0);
+function benchLines(R){return R.bench.rows.map(r=>`${r.name}: ${benchCell(r.a,r.unit)}${r.b!=null?' burst, '+benchCell(r.b,r.unit)+' sustained':''} ${r.unit}`);}
 const VERDICT={ok:'Healthy — no problems detected.',warn:'Some concerns — review the warnings below.',bad:'Problems detected — see the failures below.',na:'Nothing has been tested yet.',und:'Not yet judged — mark the checked items Pass or Fail.'};
 function battTip(){
   const ua=navigator.userAgent,where=/CrOS/.test(ua)?'On ChromeOS, open the Diagnostics app (chrome://diagnostics) for battery health % and cycle count.'
@@ -837,19 +999,20 @@ function summarize(R){ // stress results + any peripheral results
 function showReport(R0){
   const R=Object.assign({},R0,summarize(R0));
   const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-  let h=`<div class="verdict"><div class="score">${scoreTxt(R.score)}</div><div><span class="badge ${R.lvl}">${LBL[R.lvl]}</span> <b>${VERDICT[R.lvl]}</b><div class="dim">${runDesc(R)} · ${R.date.toLocaleString()}${R.tester?' · Tester: '+esc(R.tester):''}</div></div></div><div class="rgrid">`;
+  let bt='';if(R.bench&&R.bench.rows.length){bt=`<table class="btab"><tr><th>Benchmark scores · Bench v${R.bench.v}</th><th>Burst / median</th><th>Sustained</th><th>Unit</th></tr>`+R.bench.rows.map(r=>`<tr><td>${esc(r.name)}</td><td>${benchCell(r.a,r.unit)}</td><td>${r.b==null?'':benchCell(r.b,r.unit)}</td><td>${esc(r.unit)}</td></tr>`).join('')+'</table>';}
+  let h=`<div class="verdict"><div class="score">${scoreTxt(R.score)}</div><div><span class="badge ${R.lvl}">${LBL[R.lvl]}</span> <b>${VERDICT[R.lvl]}</b><div class="dim">${runDesc(R)} · ${R.date.toLocaleString()}${R.tester?' · Tester: '+esc(R.tester):''}</div></div></div>${bt}<div class="rgrid">`;
   for(const c of R.comps){h+=`<div class="rc"><h3>${c.name} <span class="badge ${c.lvl}">${LBL[c.lvl]}</span><span class="sc">${c.score==null?'':c.score+'/100'}</span></h3><table>${c.metrics.map(([k,v])=>`<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('')}</table><ul>${c.findings.map(f=>`<li class="${f.l}">${esc(f.t)}</li>`).join('')}</ul></div>`;}
   h+=`</div>`;if(R.skipped.length)h+=`<div class="notes"><b>Not tested:</b> ${esc(R.skipped.join(', '))} (switched off for this run, not counted against the score).</div>`;
-  h+=`<div class="notes">${R.notes.map(esc).join('<br>')}${R.notes.length?'<br>':''}Web-Based Computer Stress Test Build ${BUILD}</div>`;
+  h+=`<div class="notes">${R.notes.map(esc).join('<br>')}${R.notes.length?'<br>':''}Web-Based Computer Stress Test Build ${BUILD}${R.bench?' · Bench v'+R.bench.v:''}</div>`;
   $('repBody').innerHTML=h;$('repDlg').showModal();
 }
 function reportText(R0){
   const R=Object.assign({},R0,summarize(R0));
-  const L=['WEB-BASED COMPUTER STRESS TEST REPORT (Build '+BUILD+')',`Date: ${R.date.toLocaleString()}`,`Test: ${runDesc(R)}`,...(R.tester?[`Tester: ${R.tester}`]:[]),
+  const L=[(R.bench?'WEB-BASED COMPUTER STRESS TEST - BENCHMARK REPORT (Build '+BUILD+', Bench v'+R.bench.v+')':'WEB-BASED COMPUTER STRESS TEST REPORT (Build '+BUILD+')'),`Date: ${R.date.toLocaleString()}`,`Test: ${runDesc(R)}`,...(R.tester?[`Tester: ${R.tester}`]:[]),
     `Device: ${DEV.os}, ${DEV.threads} threads, ${memStr()||'?'} RAM, GPU: ${cleanGpu(DEV.gpu)}`,`Browser: ${DEV.ua}`,`GPU renderer string: ${DEV.gpu}`,'',
-    `OVERALL: ${LBL[R.lvl]}${R.score==null?'':' ('+R.score+'/100)'} - ${VERDICT[R.lvl]}`,...(R.skipped.length?[`Not tested: ${R.skipped.join(', ')} (switched off; not counted)`]:[]),''];
+    `OVERALL: ${LBL[R.lvl]}${R.score==null?'':' ('+R.score+'/100)'} - ${VERDICT[R.lvl]}`,...(R.skipped.length?[`Not tested: ${R.skipped.join(', ')} (switched off; not counted)`]:[]),'',...(R.bench?['BENCHMARK SCORES (Bench v'+R.bench.v+')',...benchLines(R).map(x=>'  '+x),'']:[])];
   for(const c of R.comps){L.push(`[${c.name}] ${LBL[c.lvl]}${c.score==null?'':' '+c.score+'/100'}`);c.metrics.forEach(([k,v])=>L.push(`  ${k}: ${v}`));c.findings.forEach(f=>L.push(`  - (${f.l}) ${f.t}`));L.push('');}
-  R.notes.forEach(n=>L.push('Note: '+n));L.push('','Generated by Web-Based Computer Stress Test Build '+BUILD+' - https://github.com/myoung8223/wbcst/');return L.join('\n');
+  R.notes.forEach(n=>L.push('Note: '+n));L.push('','Generated by Web-Based Computer Stress Test Build '+BUILD+(R.bench?', Bench v'+R.bench.v:'')+' - https://github.com/myoung8223/wbcst/');return L.join('\n');
 }
 
 /* ---------- peripherals ---------- */
@@ -1136,7 +1299,7 @@ function ds(a,n){if(a.length<=n)return a;const out=[],k=a.length/n;for(let i=0;i
 const KS={2:{P:26,tf:28,th:44,bs:20,bar:28,gl:17,gh:96,gx:16,mf:20,mr:28,ff:20,fl:27},3:{P:20,tf:24,th:38,bs:17,bar:22,gl:15,gh:72,gx:14,mf:17.5,mr:24,ff:17.5,fl:23}};
 function drawGraph(c,g,x,y,w,dur,K){
   const v0=valid(g.d),peak=Math.max(...v0);c.textBaseline='top';c.font=fnt(K.gl,600);c.fillStyle=RC.dim;
-  c.fillText(fitText(c,`${g.label} · peak ${fmt(peak,peak<10?1:0)}${g.ref?' · dashed = initial':''}`,w),x,y);
+  c.fillText(fitText(c,`${g.label} · peak ${fmt(peak,peak<10?1:0)}${g.ref?' · dashed = '+(g.refName||'initial'):''}`,w),x,y);
   const py=y+K.gl+8,ph=K.gh;rr(c,x,py,w,ph,8);c.fillStyle='#fff';c.fill();c.strokeStyle=RC.line;c.lineWidth=1.5;c.stroke();
   const d=ds(g.d,Math.floor(w/4)),max=Math.max(peak,g.ref||0)*1.15||1,n=d.length,X=i=>x+6+(n>1?i/(n-1):0)*(w-12),Y=v=>py+ph-6-(v/max)*(ph-14);
   c.save();rr(c,x,py,w,ph,8);c.clip();
@@ -1144,7 +1307,7 @@ function drawGraph(c,g,x,y,w,dur,K){
     c.beginPath();seg.forEach(([i,v],j)=>j?c.lineTo(X(i),Y(v)):c.moveTo(X(i),Y(v)));c.strokeStyle=g.col;c.lineWidth=2.5;c.lineJoin='round';c.stroke();}seg=[];};
   d.forEach((v,i)=>{if(v==null||!isFinite(v))flush();else seg.push([i,v]);});flush();
   if(g.ref){c.setLineDash([7,6]);c.strokeStyle=RC.dim;c.lineWidth=1.5;c.beginPath();c.moveTo(x,Y(g.ref));c.lineTo(x+w,Y(g.ref));c.stroke();c.setLineDash([]);}
-  c.restore();c.font=fnt(K.gx);c.fillStyle=RC.dim;c.fillText('0:00',x,py+ph+4);c.textAlign='right';c.fillText(fmtTime(dur),x+w,py+ph+4);c.textAlign='left';
+  c.restore();c.font=fnt(K.gx);c.fillStyle=RC.dim;c.fillText('0:00',x,py+ph+4);c.textAlign='right';c.fillText(fmtTime(g.dur??dur),x+w,py+ph+4);c.textAlign='left';
 }
 const graphH=K=>K.gl+8+K.gh+K.gx+10;
 function drawCard(c,R,comp,x,y,w,dry,hBg,K){
@@ -1173,7 +1336,7 @@ function bHeader(c,R,y,dry){
   const W=RP.W,M=RP.M,band=128;c.textBaseline='top';
   const dev=`${DEV.os} · ${DEV.threads||'?'} CPU threads · ${memStr()||'unknown'} RAM · GPU: ${cleanGpu(DEV.gpu)}`;
   c.font=fnt(20,600);const dl=wrapText(c,dev,W-2*M);c.font=fnt(15);const ul=wrapText(c,'Browser: '+DEV.ua,W-2*M);
-  if(!dry){c.fillStyle=RC.accent;c.fillRect(0,0,W,band);c.fillStyle='#fff';c.font=fnt(46,700);c.fillText('Web-Based Computer Stress Test Report',M,24);
+  if(!dry){c.fillStyle=RC.accent;c.fillRect(0,0,W,band);c.fillStyle='#fff';c.font=fnt(46,700);c.fillText(R.bench?'Web-Based Computer Stress Test · Benchmark':'Web-Based Computer Stress Test Report',M,24);
     c.font=fnt(21);c.globalAlpha=.9;c.fillText(`${R.date.toLocaleString()}  ·  ${runDesc(R)}${R.tester?'  ·  Tester: '+R.tester:''}`,M,84);c.globalAlpha=1;
     let yy=band+18;c.font=fnt(20,600);c.fillStyle=RC.text;dl.forEach(l=>{c.fillText(l,M,yy);yy+=27;});c.font=fnt(15);c.fillStyle=RC.dim;ul.forEach(l=>{c.fillText(l,M,yy);yy+=20;});}
   return band+18+dl.length*27+ul.length*20-y;
@@ -1194,11 +1357,22 @@ function bVerdict(c,R,y,dry){
       c.beginPath();c.arc(px+18,py+17,6,0,Math.PI*2);c.fillStyle=RC[k.lvl];c.fill();c.fillStyle=RC.text;c.textBaseline='middle';c.fillText(lab,px+32,py+18);c.textBaseline='top';}}
   return h;
 }
+function bBench(c,R,y,dry){ // score table: component, burst, sustained, unit
+  const M=RP.M,x=M,w=RP.W-2*M,P=24,rh=34,rows=R.bench.rows,h=P+40+rows.length*rh+P-8;c.textBaseline='top';
+  if(!dry){rr(c,x,y,w,h,16);c.fillStyle=RC.card;c.fill();c.strokeStyle=RC.line;c.lineWidth=2;c.stroke();
+    const cols=[x+P,x+w*0.52,x+w*0.72,x+w-P];c.font=fnt(19,700);c.fillStyle=RC.dim;
+    c.fillText(`Benchmark scores · Bench v${R.bench.v}`,cols[0],y+P);c.textAlign='right';c.fillText('Burst / median',cols[1],y+P);c.fillText('Sustained',cols[2],y+P);c.fillText('Unit',cols[3],y+P);c.textAlign='left';
+    rows.forEach((r,i)=>{const yy=y+P+40+i*rh;if(i%2===0){c.fillStyle=RC.bg;c.fillRect(x+P-8,yy-6,w-2*P+16,rh);}
+      c.font=fnt(20,600);c.fillStyle=RC.text;c.fillText(r.name,cols[0],yy);c.textAlign='right';c.font=fnt(20,700);c.fillText(benchCell(r.a,r.unit),cols[1],yy);
+      c.font=fnt(20);c.fillText(r.b==null?'':benchCell(r.b,r.unit),cols[2],yy);c.fillStyle=RC.dim;c.fillText(r.unit,cols[3],yy);c.textAlign='left';});}
+  return h;
+}
 function bNotes(c,R,y,dry){c.textBaseline='top';c.font=fnt(16);let yy=y;
   for(const n of R.notes){const ls=wrapText(c,n,RP.W-2*RP.M);if(!dry){c.fillStyle=RC.dim;ls.forEach((l,i)=>c.fillText(l,RP.M,yy+i*22));}yy+=ls.length*22+4;}return yy-y;}
+const footTxt=R=>'Web-Based Computer Stress Test Build '+BUILD+(R&&R.bench?' · Bench v'+R.bench.v:'')+' · generated locally in the browser · github.com/myoung8223/wbcst';
 function layoutReport(R,pageH){
   const W=RP.W,M=RP.M,G=24,cols=R.comps.length>4?3:2,K=KS[cols],cw=(W-2*M-G*(cols-1))/cols,mc=document.createElement('canvas').getContext('2d');
-  const blocks=[(c,y,d)=>bHeader(c,R,y,d),(c,y,d)=>bVerdict(c,R,y,d)];
+  const blocks=[(c,y,d)=>bHeader(c,R,y,d),(c,y,d)=>bVerdict(c,R,y,d)];if(R.bench&&R.bench.rows.length)blocks.push((c,y,d)=>bBench(c,R,y,d));
   for(let i=0;i<R.comps.length;i+=cols){const row=R.comps.slice(i,i+cols),rw=row.length===1&&R.comps.length>1?W-2*M:cw; // lone last card spans the row
     blocks.push((c,y,d)=>{const h=Math.max(...row.map((k,j)=>drawCard(c,R,k,M+j*(rw+G),y,rw,true,0,K)));if(!d)row.forEach((k,j)=>drawCard(c,R,k,M+j*(rw+G),y,rw,false,h,K));return h;});}
   if(R.notes&&R.notes.length)blocks.push((c,y,d)=>bNotes(c,R,y,d));
@@ -1207,18 +1381,18 @@ function layoutReport(R,pageH){
   const H=isFinite(pageH)?pageH:Math.ceil(y-G+70);
   return pages.map((pg,i)=>{const cv=document.createElement('canvas');cv.width=W;cv.height=H;const c=cv.getContext('2d');c.fillStyle=RC.bg;c.fillRect(0,0,W,H);
     for(const[b,yy]of pg)b(c,yy,false);
-    c.textBaseline='alphabetic';c.font=fnt(15);c.fillStyle=RC.dim;c.fillText('Web-Based Computer Stress Test Build '+BUILD+' · generated locally in the browser · github.com/myoung8223/wbcst',M,H-28);
+    c.textBaseline='alphabetic';c.font=fnt(15);c.fillStyle=RC.dim;c.fillText(footTxt(R),M,H-28);
     if(pages.length>1){c.textAlign='right';c.fillText(`Page ${i+1} of ${pages.length}`,W-M,H-28);c.textAlign='left';}return cv;});
 }
 /* One tall render; for PDF shrink it onto one page if it's within 20% of fitting, otherwise paginate. */
 function renderReport(R,pageH){
-  const[tall]=layoutReport(R,Infinity);if(!isFinite(pageH)||tall.height<=pageH)return[isFinite(pageH)?padTo(tall,pageH):tall];
+  const[tall]=layoutReport(R,Infinity);if(!isFinite(pageH)||tall.height<=pageH)return[isFinite(pageH)?padTo(tall,pageH,R):tall];
   const s=pageH/tall.height;if(s<0.8)return layoutReport(R,pageH);
   const cv=document.createElement('canvas');cv.width=RP.W;cv.height=pageH;const c=cv.getContext('2d');c.fillStyle=RC.bg;c.fillRect(0,0,cv.width,pageH);
   c.imageSmoothingQuality='high';c.drawImage(tall,(RP.W-RP.W*s)/2,0,RP.W*s,pageH);return[cv];
 }
-function padTo(cv,H){const o=document.createElement('canvas');o.width=cv.width;o.height=H;const c=o.getContext('2d');c.fillStyle=RC.bg;c.fillRect(0,0,o.width,H);c.drawImage(cv,0,0);
-  c.fillStyle=RC.bg;c.fillRect(0,cv.height-50,o.width,50);c.textBaseline='alphabetic';c.font=fnt(15);c.fillStyle=RC.dim;c.fillText('Web-Based Computer Stress Test Build '+BUILD+' · generated locally in the browser · github.com/myoung8223/wbcst',RP.M,H-28);return o;}
+function padTo(cv,H,R){const o=document.createElement('canvas');o.width=cv.width;o.height=H;const c=o.getContext('2d');c.fillStyle=RC.bg;c.fillRect(0,0,o.width,H);c.drawImage(cv,0,0);
+  c.fillStyle=RC.bg;c.fillRect(0,cv.height-50,o.width,50);c.textBaseline='alphabetic';c.font=fnt(15);c.fillStyle=RC.dim;c.fillText(footTxt(R),RP.M,H-28);return o;}
 function pdfFromJpegs(imgs){ // minimal PDF: one full-page JPEG per US Letter page
   const enc=new TextEncoder(),parts=[],offs=[];let len=0;
   const push=x=>{const b=typeof x==='string'?enc.encode(x):x;parts.push(b);len+=b.length;};
@@ -1265,7 +1439,7 @@ async function png8Blob(cv){
   return new Blob(out,{type:'image/png'});
 }
 const toBlob=(cv,t,q)=>new Promise((res,rej)=>cv.toBlob(b=>b?res(b):rej(new Error('image encoding failed')),t,q));
-function repName(ext,R){const d=R.date,p=n=>String(n).padStart(2,'0');const tg=(R.tester||'').replace(/[^A-Za-z0-9_-]+/g,'').slice(0,20);return`wbcst-report-${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${tg?'-'+tg:''}.${ext}`;}
+function repName(ext,R){const d=R.date,p=n=>String(n).padStart(2,'0');const tg=(R.tester||'').replace(/[^A-Za-z0-9_-]+/g,'').slice(0,20);return`wbcst-${R.bench?'bench':'report'}-${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${tg?'-'+tg:''}.${ext}`;}
 function dlBlob(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),10000);}
 async function saveVisual(kind,btn){
   const lbl=btn.textContent;btn.disabled=true;btn.textContent='Rendering…';
@@ -1292,10 +1466,11 @@ $('setSave').onclick=()=>{CFG.gpu=$('cfg-gpu').value;CFG.ramPct=+$('cfg-ram').va
   try{localStorage.setItem('cbstress-cfg',JSON.stringify(CFG));}catch(e){}txt('gpu-load',CFG.gpu);$('setDlg').close();probeServer();};
 for(const k of KEYS)$('en-'+k).onchange=()=>{if(!(S&&S.running)){$('t-'+k).classList.toggle('off',!$('en-'+k).checked);live(k,$('en-'+k).checked?'idle':'off');}syncQuick();};
 {const QN={cpu:'CPU',gpu:'GPU',ram:'RAM',disk:'Storage',net:'Network'};
-  $('quick').innerHTML=KEYS.map(k=>`<label id="ql-${k}"><input type="checkbox" id="q-${k}">${QN[k]}</label>`).join('');
+  $('quick').innerHTML=`<label id="ql-bench" title="Run each checked test on its own, in a fixed order and for a fixed time, for scores that compare across machines"><input type="checkbox" id="q-bench">Benchmark mode</label>`+KEYS.map(k=>`<label id="ql-${k}"><input type="checkbox" id="q-${k}">${QN[k]}</label>`).join('');
+  $('q-bench').onchange=()=>{if(!(S&&S.running))setBench($('q-bench').checked);};
   for(const k of KEYS)$('q-'+k).onchange=()=>{const t=$('en-'+k);if(t.disabled)return;t.checked=$('q-'+k).checked;t.onchange();};}
 syncQuick();
-txt('buildTag','Build '+BUILD+' ·');document.title='Web-Based Computer Stress Test (Build '+BUILD+')';
+txt('buildTag','Build '+BUILD+' · Bench v'+BENCH_V+' ·');document.title='Web-Based Computer Stress Test (Build '+BUILD+')';
 /* Test duration: ?d= (this visit) > last choice (remembered) > 10 minutes */
 {const sel=$('dur'),KEY='cbstress-dur';
   const label=sec=>sec===0?'Run until stopped':sec<60?`${sec} seconds`:sec%3600===0?`${sec/3600} hour${sec===3600?'':'s'}`:`${+(sec/60).toFixed(1)} minutes`;
@@ -1307,6 +1482,7 @@ txt('buildTag','Build '+BUILD+' ·');document.title='Web-Based Computer Stress T
   if(pick===null){try{const v=localStorage.getItem(KEY);if(v!==null&&/^\d+$/.test(v))pick=+v;}catch(e){}}
   if(pick!==null)setDur(pick);
   sel.addEventListener('change',()=>{try{localStorage.setItem(KEY,sel.value);}catch(e){}});}
+if(/^(1|true|yes|on)$/i.test(QP.get('b')||''))setBench(true); // ?b=1 opens in benchmark mode
 devInfo();resetTiles(null);showTester();probeServer();
 if(!window.isSecureContext){$('secNote').hidden=false;{const pth=location.pathname.replace(/[^\/]*$/,''),nts=location.host+(pth==='/'?'':pth),q=new URLSearchParams({nts});if(TESTER)q.set('t',TESTER);$('secLink').href='https://myoung8223.github.io/wbcst/?'+q;}txt('camInfo','Unavailable over http:// (browser security rule). Use https:// or a local copy.');txt('micInfo','Unavailable over http:// (browser security rule). Use https:// or a local copy.');$('camBtn').disabled=$('micBtn').disabled=true;}
 </script>
